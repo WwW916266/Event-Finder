@@ -1,64 +1,50 @@
-<<<<<<< HEAD
 # Nearo Singapore
 
-Nearo is a mobile-first local event discovery website for Singapore. It helps people find concerts, food experiences, workshops, arts events, and outdoor activities happening nearby.
+Nearo is a mobile-first local event discovery prototype for Singapore. It helps people browse nearby concerts, food experiences, workshops, art events, and outdoor activities, then save a short weekend plan.
 
 ## Current features
 
-- Search events by title, category, or location
-- Filter events by category
-- Save events to a weekend planner
-- Remove saved events
-- Add events to Google Calendar
-- Share weekend plans
+- Search events by title, category, place, or description
+- Filter by category and date window
+- Sort by recommendation, soonest, distance, or price
+- Save events to a persistent weekend planner
+- Remove saved events from cards, map previews, details, or the drawer
+- Add events to Google Calendar with event-specific times
+- Share saved weekend plans
+- Preview events on Google Maps with a built-in fallback map
+- Open event detail dialogs
 - Responsive desktop and mobile layout
-- Singapore venues, neighborhoods, and SGD pricing
 
 ## Run the website
 
-No installation is required for the current prototype.
+No installation is required. To enable Google Maps locally, create `config.js` from the example file and add your own browser API key.
 
 1. Open the project folder.
-2. Double-click `index.html`.
-3. The website will open in your browser.
+2. Copy `config.example.js` to `config.js`.
+3. Add your Google Maps JavaScript API key in `config.js`.
+4. Double-click `index.html`.
+5. The website will open in your browser.
 
 ## Project files
 
 ```text
-index.html    Page content and structure
-styles.css   Visual design and responsive layout
-app.js       Events, filters, saved plans, and interactions
+index.html          Page content and app structure
+styles.css         Visual design and responsive layout
+app.js             Event data, filtering, saved plans, map, and interactions
+config.example.js  Template for local Google Maps configuration
 ```
 
-## Save changes with Git
+## Notes
 
-```bash
-git add .
-git commit -m "Describe what changed"
-```
+This is a static prototype. Google Maps uses a browser API key from an ignored local `config.js` file. Restrict the key in Google Cloud by HTTP referrer before sharing the site publicly.
 
-When the project is connected to GitHub:
+For production, the event data should move out of `app.js` and into a backend or managed database. Real API keys, secrets, or private credentials should never be committed to this repository.
 
-```bash
-git push
-```
+## Possible next steps
 
-## Planned production features
-
-- User accounts and profiles
-- Supabase event database
-- Organizer event submissions
-- Real Singapore event sources
-- Location and map search
-- Personalized recommendations
-- Calendar reminders
-- Friend invitations and shared plans
-- Public deployment
-
-## Important
-
-Never commit passwords, private API keys, or `.env` files. These are excluded by `.gitignore`.
-
-=======
-# Event-Finder
->>>>>>> 889654dd9ac4dfd0b059cce0c356d673338ad0f7
+- Connect Supabase or another event database
+- Add organizer event submissions
+- Add user accounts and cloud-synced saved plans
+- Add real Singapore event feeds
+- Add location-based recommendations
+- Deploy the static site publicly
