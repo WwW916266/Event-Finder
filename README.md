@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Nearo Singapore
 
 Nearo is a mobile-first local event discovery website for Singapore. It helps people find concerts, food experiences, workshops, arts events, and outdoor activities happening nearby.
@@ -58,3 +59,6 @@ git push
 
 Never commit passwords, private API keys, or `.env` files. These are excluded by `.gitignore`.
 
+=======
+# Event-Finder
+>>>>>>> 889654dd9ac4dfd0b059cce0c356d673338ad0f7
