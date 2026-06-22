@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f5ef" />
+    <title>Nearo — Find what’s happening nearby</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Nearo home">
+        <span class="brand-mark">N</span><span>nearo</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a class="active" href="#discover">Discover</a>
+        <button class="nav-button" id="plansNav">My plans <span class="count" id="planCount">2</span></button>
+      </nav>
+      <div class="header-actions">
+        <button class="location-button" aria-label="Change location"><span class="pin">●</span> Singapore <span>⌄</span></button>
+        <button class="avatar" aria-label="Open profile">TH</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" id="discover">
+        <div class="eyebrow"><span></span> SINGAPORE, UNLOCKED 🇸🇬</div>
+        <h1>Find your next<br /><em>good story.</em></h1>
+        <p>Concerts, workshops, pop-ups and everything in between—curated around what you actually like.</p>
+
+        <div class="search-shell" role="search">
+          <label class="search-field">
+            <span class="search-icon">⌕</span>
+            <input id="searchInput" type="search" placeholder="Search events, artists, or places" aria-label="Search events" />
+          </label>
+          <div class="search-divider"></div>
+          <button class="date-button" id="dateButton"><span>▣</span><span><small>WHEN</small><strong>This weekend</strong></span><span>⌄</span></button>
+          <button class="search-button" id="searchButton">Explore</button>
+        </div>
+
+        <div class="popular"><span>POPULAR NEAR YOU</span><button data-query="Jazz">Jazz nights</button><button data-query="Hawker">Hawker pop-ups</button><button data-query="Art">Art shows</button></div>
+      </section>
+
+      <section class="content-section">
+        <div class="section-heading">
+          <div><span class="kicker">MADE FOR YOU</span><h2>Your weekend, sorted.</h2></div>
+          <button class="text-button" id="seeAll">See all events <span>→</span></button>
+        </div>
+
+        <div class="filters" id="filters" aria-label="Event categories">
+          <button class="filter active" data-category="All"><span>✦</span> All picks</button>
+          <button class="filter" data-category="Music"><span>♫</span> Music</button>
+          <button class="filter" data-category="Food"><span>♨</span> Food & drink</button>
+          <button class="filter" data-category="Art"><span>◇</span> Arts</button>
+          <button class="filter" data-category="Outdoor"><span>☀</span> Outdoors</button>
+          <button class="filter" data-category="Learning"><span>✎</span> Workshops</button>
+        </div>
+
+        <div class="event-grid" id="eventGrid"></div>
+        <div class="empty-state" id="emptyState" hidden><span>☁</span><h3>No events found</h3><p>Try another search or category—your next good story is still out there.</p></div>
+      </section>
+
+      <section class="pulse-section">
+        <div class="pulse-copy">
+          <span class="kicker light">HAPPENING AROUND YOU</span>
+          <h2>The city has<br />a pulse. <em>Feel it.</em></h2>
+          <p>From last-minute gigs to neighborhood gatherings, Nearo keeps you in the loop without the noise.</p>
+          <div class="stats"><div><strong>240+</strong><span>events this week</span></div><div><strong>38</strong><span>near you today</span></div></div>
+        </div>
+        <div class="pulse-map" aria-label="Stylized map of nearby events">
+          <div class="map-lines"></div>
+          <div class="map-pin p1"><span>♫</span><small>Live music</small></div>
+          <div class="map-pin p2"><span>☕</span><small>Café pop-up</small></div>
+          <div class="map-pin p3"><span>✦</span><small>Hawker night</small></div>
+          <div class="you-here">YOU ARE HERE</div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="plans-drawer" id="plansDrawer" aria-hidden="true">
+      <div class="drawer-header"><div><span class="kicker">YOUR WEEKEND</span><h2>My plans</h2></div><button id="closeDrawer" aria-label="Close plans">×</button></div>
+      <div id="savedEvents" class="saved-events"></div>
+      <div class="drawer-footer"><p><strong>Make it a group thing.</strong><br />Share your plans and see who’s in.</p><button id="sharePlans">Share weekend</button></div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+    <div class="toast" id="toast" role="status"></div>
+
+    <footer><a class="brand footer-brand" href="#"><span class="brand-mark">N</span><span>nearo</span></a><p>Go somewhere. Feel something.</p><span>© 2026 Nearo</span></footer>
+    <script src="app.js"></script>
+  </body>
+</html>
