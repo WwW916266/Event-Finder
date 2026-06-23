@@ -1,8 +1,8 @@
-const events = [
+const fallbackEvents = [
   {
     id: 1,
     title: "Rooftop Jazz at Golden Hour",
-    category: "Music",
+    category: "Concert",
     dateGroup: "This weekend",
     day: "27",
     month: "JUN",
@@ -149,7 +149,7 @@ const events = [
   {
     id: 8,
     title: "Tiny Desk Songwriters Circle",
-    category: "Music",
+    category: "Concert",
     dateGroup: "Next week",
     day: "04",
     month: "JUL",
@@ -170,7 +170,10 @@ const events = [
 ];
 
 const STORAGE_KEY = "nearo.saved";
+const EVENTS_PER_PAGE = 12;
 const GOOGLE_MAPS_API_KEY = window.NEARO_CONFIG?.GOOGLE_MAPS_API_KEY || "";
+const SUPABASE_URL = window.NEARO_CONFIG?.SUPABASE_URL || "";
+const SUPABASE_PUBLISHABLE_KEY = window.NEARO_CONFIG?.SUPABASE_PUBLISHABLE_KEY || "";
 const SINGAPORE_CENTER = { lat: 1.2931, lng: 103.852 };
 const MAP_STYLE = [
   { elementType: "geometry", stylers: [{ color: "#20483c" }] },
@@ -187,6 +190,7 @@ const MAP_STYLE = [
   { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#78958a" }] },
 ];
 
+let events = [...fallbackEvents];
 let saved = new Set(readSaved());
 let activeCategory = "All";
 let activeMapId = events[0].id;
@@ -194,6 +198,8 @@ let googleMap;
 let infoWindow;
 let googleMarkers = new Map();
 let lastFilteredEvents = [];
+let currentPage = 1;
+let usingFallbackEvents = true;
 
 const grid = document.querySelector("#eventGrid");
 const emptyState = document.querySelector("#emptyState");
@@ -202,6 +208,7 @@ const searchInput = document.querySelector("#searchInput");
 const dateSelect = document.querySelector("#dateSelect");
 const sortSelect = document.querySelector("#sortSelect");
 const resultsMeta = document.querySelector("#resultsMeta");
+const pagination = document.querySelector("#pagination");
 const googleMapEl = document.querySelector("#googleMap");
 const mapFallback = document.querySelector("#mapFallback");
 const mapPanel = document.querySelector(".map-panel");
@@ -213,7 +220,7 @@ const dialogContent = document.querySelector("#dialogContent");
 function readSaved() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[1,3]");
-    return stored.filter((id) => events.some((event) => event.id === id));
+    return stored;
   } catch {
     return [1, 3];
   }
@@ -228,7 +235,7 @@ function writeSaved() {
 }
 
 function eventCard(event) {
-  const isSaved = saved.has(event.id);
+  const isSaved = saved.has(String(event.id));
 
   return `<article class="event-card" data-card="${event.id}">
     <div class="event-image" style="background-image: url('${event.image}')">
@@ -242,7 +249,7 @@ function eventCard(event) {
       </div>
       <h3>${event.title}</h3>
       <div class="meta"><span aria-hidden="true">Time</span><span>${event.time}</span></div>
-      <div class="meta"><span aria-hidden="true">Place</span><span>${event.place} · ${event.distance.toFixed(1)} km</span></div>
+      <div class="meta"><span aria-hidden="true">Place</span><span>${event.place}</span></div>
       <div class="card-footer">
         <div class="attendees"><span class="mini-avatar">M</span><span class="mini-avatar">J</span><span>${event.people}</span></div>
         <span class="price">${event.price}</span>
@@ -275,23 +282,200 @@ function getFilteredEvents() {
   });
 }
 
+async function loadEventsFromSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !window.supabase) {
+    render();
+    return;
+  }
+
+  try {
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    const { data, error } = await client
+      .from("events")
+      .select("*, venues(*), event_sources(*)")
+      .eq("status", "published")
+      .order("starts_at", { ascending: true });
+
+    if (error) throw error;
+
+    const normalized = (data || []).map(normalizeSupabaseEvent).filter(Boolean);
+    if (normalized.length) {
+      events = normalized;
+      usingFallbackEvents = false;
+      activeMapId = events[0].id;
+      saved = new Set([...saved].filter((id) => events.some((event) => String(event.id) === String(id))));
+      toast(`Loaded ${events.length} events from Supabase`);
+    } else {
+      resultsMeta.textContent = "No published Supabase events yet. Showing demo events.";
+    }
+  } catch (error) {
+    console.warn("Using demo events because Supabase could not load.", error);
+    toast("Using demo events while Supabase is unavailable");
+  }
+
+  render();
+}
+
+function normalizeSupabaseEvent(row) {
+  const startsAt = row.starts_at ? new Date(row.starts_at) : new Date();
+  const endsAt = row.ends_at ? new Date(row.ends_at) : new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
+  const venue = row.venues || {};
+  const coords = {
+    lat: Number(venue.latitude || SINGAPORE_CENTER.lat),
+    lng: Number(venue.longitude || SINGAPORE_CENTER.lng),
+  };
+  const priceMin = Number(row.price_min || 0);
+  const priceMax = Number(row.price_max || priceMin);
+
+  return {
+    id: row.id,
+    title: row.title || "Untitled event",
+    category: row.category || "Event",
+    dateGroup: dateGroupFor(startsAt),
+    day: formatDay(startsAt),
+    month: formatMonth(startsAt),
+    sortDate: row.starts_at || startsAt.toISOString(),
+    time: formatEventTime(startsAt),
+    durationHours: Math.max((endsAt - startsAt) / 3600000, 1),
+    place: venue.name || row.venue_name || "Singapore",
+    distance: distanceFromCenter(coords),
+    price: formatPrice(priceMin, priceMax, row.currency || "SGD"),
+    priceValue: priceMin,
+    people: row.people || "New listing",
+    availability: row.availability || sourceLabel(row.event_sources?.name),
+    image: row.image_url || fallbackEvents[0].image,
+    description: row.description || "Official event details are coming soon.",
+    coords,
+    map: mapPointFromCoords(coords),
+    officialUrl: row.official_url,
+    ticketUrl: row.ticket_url,
+  };
+}
+
+function dateGroupFor(date) {
+  const today = new Date();
+  const todayKey = localDateKey(today);
+  const eventKey = localDateKey(date);
+  const day = date.getDay();
+  const diffDays = Math.floor((new Date(eventKey) - new Date(todayKey)) / 86400000);
+
+  if (eventKey === todayKey) return "Today";
+  if (diffDays >= 0 && diffDays <= 6 && (day === 0 || day === 6)) return "This weekend";
+  if (diffDays >= 0 && diffDays <= 14) return "Next week";
+  return "Anytime";
+}
+
+function localDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatDay(date) {
+  return String(date.getDate()).padStart(2, "0");
+}
+
+function formatMonth(date) {
+  return date.toLocaleString("en-SG", { month: "short", timeZone: "Asia/Singapore" }).toUpperCase();
+}
+
+function formatEventTime(date) {
+  return date.toLocaleString("en-SG", {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Singapore",
+  });
+}
+
+function formatPrice(min, max, currency) {
+  if (!min && !max) return "Free";
+  const symbol = currency === "SGD" ? "S$" : `${currency} `;
+  return min === max ? `${symbol}${min}` : `${symbol}${min}-${max}`;
+}
+
+function sourceLabel(sourceName) {
+  return sourceName ? sourceName : "Official listing";
+}
+
+function distanceFromCenter(coords) {
+  const earthRadius = 6371;
+  const toRad = (value) => (value * Math.PI) / 180;
+  const dLat = toRad(coords.lat - SINGAPORE_CENTER.lat);
+  const dLng = toRad(coords.lng - SINGAPORE_CENTER.lng);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(SINGAPORE_CENTER.lat)) * Math.cos(toRad(coords.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function mapPointFromCoords(coords) {
+  return {
+    x: Math.min(Math.max(((coords.lng - 103.79) / 0.15) * 100, 8), 92),
+    y: Math.min(Math.max(((1.34 - coords.lat) / 0.08) * 100, 8), 92),
+  };
+}
+
 function render() {
   const filtered = getFilteredEvents();
+  const totalPages = Math.max(Math.ceil(filtered.length / EVENTS_PER_PAGE), 1);
+  currentPage = Math.min(Math.max(currentPage, 1), totalPages);
+  const pageStart = (currentPage - 1) * EVENTS_PER_PAGE;
+  const pageEvents = filtered.slice(pageStart, pageStart + EVENTS_PER_PAGE);
+
   lastFilteredEvents = filtered;
-  grid.innerHTML = filtered.map(eventCard).join("");
+  grid.innerHTML = pageEvents.map(eventCard).join("");
   emptyState.hidden = filtered.length !== 0;
   planCount.textContent = saved.size;
 
   const noun = filtered.length === 1 ? "event" : "events";
-  resultsMeta.textContent = `${filtered.length} ${noun} shown`;
+  const pageText = filtered.length ? `Showing ${pageStart + 1}-${pageStart + pageEvents.length} of ` : "";
+  resultsMeta.textContent = usingFallbackEvents ? `${pageText}${filtered.length} demo ${noun}` : `${pageText}${filtered.length} ${noun} from Supabase`;
 
   renderSaved();
+  renderPagination(totalPages);
   renderMap(filtered);
   renderStats(filtered);
 }
 
+function renderPagination(totalPages) {
+  if (totalPages <= 1) {
+    pagination.hidden = true;
+    pagination.innerHTML = "";
+    return;
+  }
+
+  pagination.hidden = false;
+  const pages = paginationPages(totalPages);
+
+  pagination.innerHTML = `
+    <button class="page-button page-step" type="button" data-page="${currentPage - 1}" ${currentPage === 1 ? "disabled" : ""}>Prev</button>
+    ${pages.map((page) => page === "gap"
+      ? `<span class="page-gap" aria-hidden="true">...</span>`
+      : `<button class="page-button ${page === currentPage ? "active" : ""}" type="button" data-page="${page}" aria-current="${page === currentPage ? "page" : "false"}">${page}</button>`).join("")}
+    <button class="page-button page-step" type="button" data-page="${currentPage + 1}" ${currentPage === totalPages ? "disabled" : ""}>Next</button>
+  `;
+}
+
+function paginationPages(totalPages) {
+  if (totalPages <= 5) return Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  const middle = [currentPage - 1, currentPage, currentPage + 1]
+    .filter((page) => page > 1 && page < totalPages);
+  const pages = [1, ...middle, totalPages];
+  const unique = [...new Set(pages)].sort((a, b) => a - b);
+
+  return unique.flatMap((page, index) => {
+    if (index === 0) return [page];
+    return page - unique[index - 1] > 1 ? ["gap", page] : [page];
+  });
+}
+
+function resetPagination() {
+  currentPage = 1;
+}
+
 function renderSaved() {
-  const chosen = events.filter((event) => saved.has(event.id));
+  const chosen = events.filter((event) => saved.has(String(event.id)));
   const container = document.querySelector("#savedEvents");
 
   container.innerHTML = chosen.length
@@ -309,23 +493,23 @@ function renderSaved() {
 
 function renderStats(filtered) {
   const freeCount = filtered.filter((event) => event.priceValue === 0).length;
-  const nearest = filtered.length ? Math.min(...filtered.map((event) => event.distance)).toFixed(1) : "0.0";
+  const sourceCount = new Set(filtered.map((event) => event.availability).filter(Boolean)).size;
 
   cityStats.innerHTML = `
     <div class="stat"><strong>${filtered.length}</strong><span>matching events</span></div>
     <div class="stat"><strong>${freeCount}</strong><span>free to join</span></div>
-    <div class="stat"><strong>${nearest} km</strong><span>nearest pick</span></div>
+    <div class="stat"><strong>${sourceCount}</strong><span>official sources</span></div>
     <div class="stat"><strong>${saved.size}</strong><span>saved plans</span></div>
   `;
 }
 
 function renderMap(filtered) {
-  const visibleIds = new Set(filtered.map((event) => event.id));
-  if (!visibleIds.has(activeMapId) && filtered.length) activeMapId = filtered[0].id;
+  const visibleIds = new Set(filtered.map((event) => String(event.id)));
+  if (!visibleIds.has(String(activeMapId)) && filtered.length) activeMapId = filtered[0].id;
 
   renderFallbackMap(filtered);
   updateGoogleMarkers(filtered);
-  renderMapPreview(events.find((event) => event.id === activeMapId) || filtered[0]);
+  renderMapPreview(events.find((event) => String(event.id) === String(activeMapId)) || filtered[0]);
 }
 
 function renderFallbackMap(filtered) {
@@ -337,7 +521,7 @@ function renderFallbackMap(filtered) {
   ];
 
   mapFallback.innerHTML = roads.map((road) => `<span class="map-road" style="left: ${road.left}%; top: ${road.top}%; width: ${road.width}%; transform: rotate(${road.rotate}deg);"></span>`).join("") +
-    filtered.map((event) => `<button class="event-pin ${event.id === activeMapId ? "active" : ""}" type="button" data-pin="${event.id}" style="left: ${event.map.x}%; top: ${event.map.y}%;" aria-label="Preview ${event.title}">
+    filtered.map((event) => `<button class="event-pin ${String(event.id) === String(activeMapId) ? "active" : ""}" type="button" data-pin="${event.id}" style="left: ${event.map.x}%; top: ${event.map.y}%;" aria-label="Preview ${event.title}">
       <span class="pin-bubble"><span>${event.category.slice(0, 1)}</span></span>
     </button>`).join("");
 }
@@ -365,9 +549,9 @@ function initGoogleMap() {
 function updateGoogleMarkers(filtered) {
   if (!googleMap || !window.google) return;
 
-  const visibleIds = new Set(filtered.map((event) => event.id));
+  const visibleIds = new Set(filtered.map((event) => String(event.id)));
   googleMarkers.forEach((marker, id) => {
-    if (!visibleIds.has(id)) {
+    if (!visibleIds.has(String(id))) {
       marker.setMap(null);
       googleMarkers.delete(id);
     }
@@ -375,7 +559,7 @@ function updateGoogleMarkers(filtered) {
 
   filtered.forEach((event) => {
     let marker = googleMarkers.get(event.id);
-    const icon = markerIcon(event.id === activeMapId);
+    const icon = markerIcon(String(event.id) === String(activeMapId));
 
     if (!marker) {
       marker = new google.maps.Marker({
@@ -429,11 +613,11 @@ function highlightActiveMarker() {
   if (!googleMap || !window.google) return;
 
   googleMarkers.forEach((marker, id) => {
-    marker.setIcon(markerIcon(id === activeMapId));
-    marker.setZIndex(id === activeMapId ? 20 : 1);
+    marker.setIcon(markerIcon(String(id) === String(activeMapId)));
+    marker.setZIndex(String(id) === String(activeMapId) ? 20 : 1);
   });
 
-  const active = events.find((event) => event.id === activeMapId);
+  const active = events.find((event) => String(event.id) === String(activeMapId));
   if (active && googleMarkers.has(active.id)) {
     googleMap.panTo(active.coords);
   }
@@ -441,7 +625,7 @@ function highlightActiveMarker() {
 
 function highlightCard(id) {
   document.querySelectorAll(".event-card").forEach((card) => {
-    card.classList.toggle("highlight", Number(card.dataset.card) === id);
+    card.classList.toggle("highlight", String(card.dataset.card) === String(id));
   });
 }
 
@@ -463,7 +647,7 @@ function renderMapPreview(event) {
     return;
   }
 
-  const isSaved = saved.has(event.id);
+  const isSaved = saved.has(String(event.id));
   mapPreview.innerHTML = `
     <span class="card-tag">${event.category}</span>
     <h3>${event.title}</h3>
@@ -484,11 +668,12 @@ function calendarUrl(event) {
 }
 
 function toggleSave(id) {
-  if (saved.has(id)) {
-    saved.delete(id);
+  const key = String(id);
+  if (saved.has(key)) {
+    saved.delete(key);
     toast("Removed from your plans");
   } else {
-    saved.add(id);
+    saved.add(key);
     toast("Saved to your weekend");
   }
 
@@ -497,10 +682,12 @@ function toggleSave(id) {
 }
 
 function openDetails(id) {
-  const event = events.find((item) => item.id === id);
+  const event = events.find((item) => String(item.id) === String(id));
   if (!event) return;
 
-  const isSaved = saved.has(event.id);
+  const isSaved = saved.has(String(event.id));
+  const eventLink = event.ticketUrl || event.officialUrl || calendarUrl(event);
+  const eventLinkText = event.ticketUrl ? "Get tickets" : event.officialUrl ? "Official page" : "Add to calendar";
   dialogContent.innerHTML = `
     <div class="dialog-media" style="background-image: url('${event.image}')"></div>
     <div class="dialog-body">
@@ -508,10 +695,10 @@ function openDetails(id) {
       <h2 id="dialogTitle">${event.title}</h2>
       <p>${event.description}</p>
       <div class="meta"><span aria-hidden="true">Time</span><span>${event.time}</span></div>
-      <div class="meta"><span aria-hidden="true">Place</span><span>${event.place} · ${event.distance.toFixed(1)} km</span></div>
+      <div class="meta"><span aria-hidden="true">Place</span><span>${event.place}</span></div>
       <div class="dialog-actions">
         <button class="dialog-save" type="button" data-save="${event.id}">${isSaved ? "Remove from plans" : "Save to plans"}</button>
-        <a href="${calendarUrl(event)}" target="_blank" rel="noreferrer">Add to calendar</a>
+        <a href="${eventLink}" target="_blank" rel="noreferrer">${eventLinkText}</a>
         <button class="dialog-close" type="button" data-close-dialog>Close</button>
       </div>
     </div>
@@ -557,19 +744,20 @@ function closeDrawer() {
 document.addEventListener("click", (event) => {
   const saveButton = event.target.closest("[data-save]");
   if (saveButton) {
-    toggleSave(Number(saveButton.dataset.save));
+    toggleSave(saveButton.dataset.save);
     return;
   }
 
   const removeButton = event.target.closest("[data-remove]");
   if (removeButton) {
-    toggleSave(Number(removeButton.dataset.remove));
+    toggleSave(removeButton.dataset.remove);
     return;
   }
 
   const filterButton = event.target.closest(".filter");
   if (filterButton) {
     activeCategory = filterButton.dataset.category;
+    resetPagination();
     document.querySelectorAll(".filter").forEach((button) => button.classList.toggle("active", button === filterButton));
     render();
     return;
@@ -578,26 +766,35 @@ document.addEventListener("click", (event) => {
   const popularButton = event.target.closest("[data-query]");
   if (popularButton) {
     searchInput.value = popularButton.dataset.query;
+    resetPagination();
     render();
     document.querySelector(".content-section").scrollIntoView({ behavior: "smooth" });
     return;
   }
 
+  const pageButton = event.target.closest("[data-page]");
+  if (pageButton) {
+    currentPage = Number(pageButton.dataset.page);
+    render();
+    document.querySelector(".content-section").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
   const detailsButton = event.target.closest("[data-details]");
   if (detailsButton) {
-    openDetails(Number(detailsButton.dataset.details));
+    openDetails(detailsButton.dataset.details);
     return;
   }
 
   const mapButton = event.target.closest("[data-map]");
   if (mapButton) {
-    setActiveMap(Number(mapButton.dataset.map));
+    setActiveMap(mapButton.dataset.map);
     return;
   }
 
   const pin = event.target.closest("[data-pin]");
   if (pin) {
-    activeMapId = Number(pin.dataset.pin);
+    activeMapId = pin.dataset.pin;
     render();
     highlightActiveMarker();
     highlightCard(activeMapId);
@@ -611,13 +808,23 @@ document.addEventListener("click", (event) => {
 
 document.querySelector("#searchForm").addEventListener("submit", (event) => {
   event.preventDefault();
+  resetPagination();
   render();
   document.querySelector(".content-section").scrollIntoView({ behavior: "smooth" });
 });
 
-searchInput.addEventListener("input", render);
-dateSelect.addEventListener("change", render);
-sortSelect.addEventListener("change", render);
+searchInput.addEventListener("input", () => {
+  resetPagination();
+  render();
+});
+dateSelect.addEventListener("change", () => {
+  resetPagination();
+  render();
+});
+sortSelect.addEventListener("change", () => {
+  resetPagination();
+  render();
+});
 
 document.querySelector("#plansNav").addEventListener("click", openDrawer);
 document.querySelector("#closeDrawer").addEventListener("click", closeDrawer);
@@ -625,7 +832,7 @@ document.querySelector("#scrim").addEventListener("click", closeDrawer);
 document.querySelector("#locationButton").addEventListener("click", () => toast("Showing Singapore events"));
 
 document.querySelector("#sharePlans").addEventListener("click", async () => {
-  const chosen = events.filter((event) => saved.has(event.id));
+  const chosen = events.filter((event) => saved.has(String(event.id)));
   const text = chosen.length
     ? `My Nearo weekend: ${chosen.map((event) => event.title).join(", ")}`
     : "My Nearo weekend is wide open.";
@@ -647,6 +854,7 @@ document.querySelector("#seeAll").addEventListener("click", () => {
   searchInput.value = "";
   dateSelect.value = "Anytime";
   sortSelect.value = "recommended";
+  resetPagination();
   document.querySelectorAll(".filter").forEach((button, index) => button.classList.toggle("active", index === 0));
   render();
 });
@@ -661,7 +869,7 @@ document.addEventListener("keydown", (event) => {
 window.initGoogleMap = initGoogleMap;
 window.handleGoogleMapError = handleGoogleMapError;
 
-render();
+loadEventsFromSupabase();
 loadGoogleMaps();
 
 function loadGoogleMaps() {

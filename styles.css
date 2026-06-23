@@ -414,6 +414,49 @@ p {
   gap: 22px;
 }
 
+.pagination {
+  margin: 28px 0 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.page-button {
+  min-width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.page-button.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: white;
+}
+
+.page-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.page-step {
+  min-width: 64px;
+  padding: 0 14px;
+}
+
+.page-gap {
+  min-width: 20px;
+  color: var(--muted);
+  text-align: center;
+  font-weight: 800;
+}
+
 .event-card {
   border: 1px solid #e7e6df;
   border-radius: var(--radius);
