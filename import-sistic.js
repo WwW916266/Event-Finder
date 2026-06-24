@@ -131,7 +131,7 @@ async function upsertEvent(item, startsAt, venue, source) {
       starts_at: startsAt,
       ends_at: endsAt,
       venue_id: venue?.id,
-      image_url: item.horizontal_image || null,
+      image_url: sisticImageUrl(item),
       official_url: url,
       ticket_url: url,
       price_min: priceMin,
@@ -180,6 +180,25 @@ function monthIndex(value) {
 function sisticEventUrl(item) {
   if (item.alias) return `https://www.sistic.com.sg/events/${item.alias}`;
   return `https://www.sistic.com.sg/events`;
+}
+
+function sisticImageUrl(item) {
+  const value = [
+    item.horizontal_image,
+    item.image_url,
+    item.image,
+    item.thumbnail,
+    item.mobile_image,
+    item.vertical_image,
+    item.banner_image,
+  ].find((candidate) => cleanText(candidate));
+
+  if (!value) return null;
+
+  const url = cleanText(value);
+  if (url.startsWith("//")) return `https:${url}`;
+  if (url.startsWith("/")) return `https://www.sistic.com.sg${url}`;
+  return url;
 }
 
 function categoryFor(genre = "") {

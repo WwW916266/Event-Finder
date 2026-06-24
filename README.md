@@ -80,6 +80,8 @@ node import-sistic.js
 
 The importers read private keys from ignored `config.js`, then upsert official event listings into Supabase without committing secrets.
 
+If existing SISTIC events are missing artwork, run `node import-sistic.js` again after pulling the latest code. The importer now checks multiple SISTIC image fields and normalizes relative image URLs.
+
 ## Project files
 
 ```text

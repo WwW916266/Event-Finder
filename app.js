@@ -193,6 +193,16 @@ const MAP_STYLE = [
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#163029" }] },
   { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#78958a" }] },
 ];
+const FALLBACK_IMAGES = {
+  Art: "https://images.unsplash.com/photo-1507924538820-ede94a04019d?auto=format&fit=crop&w=1000&q=85",
+  Concert: "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=1000&q=85",
+  Event: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1000&q=85",
+  Food: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1000&q=85",
+  Learning: "https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1000&q=85",
+  Outdoor: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1000&q=85",
+  Sports: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=1000&q=85",
+  SISTIC: "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=1000&q=85",
+};
 
 let events = [...fallbackEvents];
 let saved = new Set(readSaved());
@@ -266,9 +276,10 @@ function writeSaved() {
 
 function eventCard(event) {
   const isSaved = saved.has(String(event.id));
+  const image = eventImage(event);
 
   return `<article class="event-card" data-card="${event.id}">
-    <div class="event-image" style="background-image: url('${event.image}')">
+    <div class="event-image" style="background-image: url('${image}')">
       <div class="date-badge"><span>${event.month}</span><strong>${event.day}</strong></div>
       <button class="save-button ${isSaved ? "saved" : ""}" type="button" data-save="${event.id}" aria-label="${isSaved ? "Remove from" : "Save to"} plans">${isSaved ? "♥" : "♡"}</button>
     </div>
@@ -318,6 +329,12 @@ function getFilteredEvents(options = {}) {
 function getAiRecommendedEvents() {
   const ids = new Set(aiRecommendedIds.map(String));
   return events.filter((event) => ids.has(String(event.id)));
+}
+
+function eventImage(event) {
+  if (event.image) return event.image;
+  if (String(event.availability || "").toLowerCase().includes("sistic")) return FALLBACK_IMAGES.SISTIC;
+  return FALLBACK_IMAGES[event.category] || FALLBACK_IMAGES.Event;
 }
 
 async function askAiGuide(event) {
@@ -680,10 +697,13 @@ function normalizeSupabaseEvent(row) {
   const priceMin = Number(row.price_min || 0);
   const priceMax = Number(row.price_max || priceMin);
 
+  const category = row.category || "Event";
+  const source = sourceLabel(row.event_sources?.name);
+
   return {
     id: row.id,
     title: row.title || "Untitled event",
-    category: row.category || "Event",
+    category,
     dateGroup: dateGroupFor(startsAt),
     day: formatDay(startsAt),
     month: formatMonth(startsAt),
@@ -695,8 +715,8 @@ function normalizeSupabaseEvent(row) {
     price: formatPrice(priceMin, priceMax, row.currency || "SGD"),
     priceValue: priceMin,
     people: row.people || "New listing",
-    availability: row.availability || sourceLabel(row.event_sources?.name),
-    image: row.image_url || fallbackEvents[0].image,
+    availability: row.availability || source,
+    image: row.image_url || fallbackImageFor(category, source),
     description: row.description || "Official event details are coming soon.",
     coords,
     map: mapPointFromCoords(coords),
@@ -748,6 +768,11 @@ function formatPrice(min, max, currency) {
 
 function sourceLabel(sourceName) {
   return sourceName ? sourceName : "Official listing";
+}
+
+function fallbackImageFor(category = "Event", source = "") {
+  if (String(source).toLowerCase().includes("sistic")) return FALLBACK_IMAGES.SISTIC;
+  return FALLBACK_IMAGES[category] || FALLBACK_IMAGES.Event;
 }
 
 function distanceFromCenter(coords) {
@@ -855,7 +880,7 @@ function renderSaved() {
 
   container.innerHTML = chosen.length
     ? chosen.map((event) => `<div class="saved-item">
-        <div class="saved-thumb" style="background-image: url('${event.image}')"></div>
+        <div class="saved-thumb" style="background-image: url('${eventImage(event)}')"></div>
         <div>
           <h3>${event.title}</h3>
           <p>${event.time}<br>${event.place}</p>
@@ -1146,7 +1171,7 @@ function openDetails(id) {
   const eventLink = event.ticketUrl || event.officialUrl || calendarUrl(event);
   const eventLinkText = event.ticketUrl ? "Get tickets" : event.officialUrl ? "Official page" : "Add to calendar";
   dialogContent.innerHTML = `
-    <div class="dialog-media" style="background-image: url('${event.image}')"></div>
+    <div class="dialog-media" style="background-image: url('${eventImage(event)}')"></div>
     <div class="dialog-body">
       <span class="card-tag">${event.category}</span>
       <h2 id="dialogTitle">${event.title}</h2>
