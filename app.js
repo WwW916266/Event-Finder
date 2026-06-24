@@ -174,6 +174,10 @@ const EVENTS_PER_PAGE = 12;
 const GOOGLE_MAPS_API_KEY = window.NEARO_CONFIG?.GOOGLE_MAPS_API_KEY || "";
 const SUPABASE_URL = window.NEARO_CONFIG?.SUPABASE_URL || "";
 const SUPABASE_PUBLISHABLE_KEY = window.NEARO_CONFIG?.SUPABASE_PUBLISHABLE_KEY || "";
+const GEMINI_API_KEY = window.NEARO_CONFIG?.GEMINI_API_KEY || "";
+const GEMINI_MODEL = window.NEARO_CONFIG?.GEMINI_MODEL || "gemini-flash-latest";
+const GEMINI_FALLBACK_MODELS = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-3-flash-preview", "gemini-flash-latest"]
+  .filter((model, index, models) => model && models.indexOf(model) === index);
 const SINGAPORE_CENTER = { lat: 1.2931, lng: 103.852 };
 const MAP_STYLE = [
   { elementType: "geometry", stylers: [{ color: "#20483c" }] },
@@ -200,6 +204,9 @@ let googleMarkers = new Map();
 let lastFilteredEvents = [];
 let currentPage = 1;
 let usingFallbackEvents = true;
+let supabaseClient = null;
+let currentUser = null;
+let authMode = "login";
 
 const grid = document.querySelector("#eventGrid");
 const emptyState = document.querySelector("#emptyState");
@@ -209,6 +216,13 @@ const dateSelect = document.querySelector("#dateSelect");
 const sortSelect = document.querySelector("#sortSelect");
 const resultsMeta = document.querySelector("#resultsMeta");
 const pagination = document.querySelector("#pagination");
+const aiGuideForm = document.querySelector("#aiGuideForm");
+const aiGuide = document.querySelector("#aiGuide");
+const aiToggle = document.querySelector("#aiToggle");
+const aiClose = document.querySelector("#aiClose");
+const aiPrompt = document.querySelector("#aiPrompt");
+const aiGuideButton = document.querySelector("#aiGuideButton");
+const aiResults = document.querySelector("#aiResults");
 const googleMapEl = document.querySelector("#googleMap");
 const mapFallback = document.querySelector("#mapFallback");
 const mapPanel = document.querySelector(".map-panel");
@@ -216,6 +230,18 @@ const mapPreview = document.querySelector("#mapPreview");
 const cityStats = document.querySelector("#cityStats");
 const eventDialog = document.querySelector("#eventDialog");
 const dialogContent = document.querySelector("#dialogContent");
+const accountButton = document.querySelector("#accountButton");
+const accountAvatar = document.querySelector("#accountAvatar");
+const accountLabel = document.querySelector("#accountLabel");
+const authDialog = document.querySelector("#authDialog");
+const authForm = document.querySelector("#authForm");
+const authTitle = document.querySelector("#authTitle");
+const authSubtitle = document.querySelector("#authSubtitle");
+const authSubmit = document.querySelector("#authSubmit");
+const authNote = document.querySelector("#authNote");
+const authSession = document.querySelector("#authSession");
+const authUserEmail = document.querySelector("#authUserEmail");
+const signOutButton = document.querySelector("#signOutButton");
 
 function readSaved() {
   try {
@@ -256,6 +282,7 @@ function eventCard(event) {
       </div>
       <div class="card-actions">
         <button class="details-button" type="button" data-details="${event.id}">View details</button>
+        <button class="calendar-button" type="button" data-calendar="${event.id}">Calendar</button>
         <button class="map-jump" type="button" data-map="${event.id}">Map</button>
       </div>
     </div>
@@ -282,14 +309,161 @@ function getFilteredEvents() {
   });
 }
 
+async function askAiGuide(event) {
+  event.preventDefault();
+  const prompt = aiPrompt.value.trim();
+  if (!prompt) {
+    toast("Tell the AI what you feel like doing");
+    return;
+  }
+
+  if (!GEMINI_API_KEY) {
+    aiResults.innerHTML = `<div class="ai-empty">Add your Gemini API key in local config.js to enable AI picks.</div>`;
+    return;
+  }
+
+  const candidates = getAiEventCandidates();
+  if (!candidates.length) {
+    aiResults.innerHTML = `<div class="ai-empty">No events are loaded yet. Try again after the event list finishes loading.</div>`;
+    return;
+  }
+
+  aiGuideButton.disabled = true;
+  aiGuideButton.textContent = "Thinking...";
+  aiResults.innerHTML = `<div class="ai-empty">Finding real events that match...</div>`;
+
+  try {
+    const result = await fetchGeminiRecommendations(prompt, candidates);
+    renderAiRecommendations(result);
+  } catch (error) {
+    console.error("Gemini AI guide failed", error);
+    aiResults.innerHTML = `<div class="ai-empty">${escapeHtml(error.message || "AI guide could not answer right now.")}</div>`;
+  } finally {
+    aiGuideButton.disabled = false;
+    aiGuideButton.textContent = "Ask AI";
+  }
+}
+
+function getAiEventCandidates() {
+  const filtered = getFilteredEvents();
+  const source = filtered.length ? filtered : events;
+  return source.slice(0, 80).map((event) => ({
+    id: String(event.id),
+    title: event.title,
+    category: event.category,
+    date: event.time,
+    place: event.place,
+    price: event.price,
+    source: event.availability,
+    description: event.description.slice(0, 220),
+  }));
+}
+
+async function fetchGeminiRecommendations(prompt, candidates) {
+  let lastError = null;
+
+  for (const model of GEMINI_FALLBACK_MODELS) {
+    try {
+      return await fetchGeminiWithModel(model, prompt, candidates);
+    } catch (error) {
+      lastError = error;
+      console.warn(`Gemini model ${model} failed`, error.message);
+    }
+  }
+
+  throw lastError || new Error("Gemini request failed");
+}
+
+async function fetchGeminiWithModel(model, prompt, candidates) {
+  const modelPath = model.startsWith("models/") ? model : `models/${model}`;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(geminiRequestBody(prompt, candidates)),
+  });
+
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error?.message || "Gemini request failed");
+
+  return parseGeminiJson(payload.candidates?.[0]?.content?.parts?.[0]?.text || "");
+}
+
+function geminiRequestBody(prompt, candidates) {
+  return {
+    generationConfig: {
+      temperature: 0.35,
+      responseMimeType: "application/json",
+    },
+    contents: [{
+      role: "user",
+      parts: [{
+        text: [
+          "You are Nearo AI Guide for Singapore events.",
+          "Recommend only from the provided event list. Do not invent events, venues, prices, or dates.",
+          "Return strict JSON with this shape: {\"summary\":\"short answer\",\"picks\":[{\"id\":\"event id\",\"reason\":\"why it fits\"}]}",
+          "Choose at most 5 picks. If nothing fits, return an empty picks array and explain why in summary.",
+          `User request: ${prompt}`,
+          `Events: ${JSON.stringify(candidates)}`,
+        ].join("\n\n"),
+      }],
+    }],
+  };
+}
+
+function parseGeminiJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error("AI returned an unreadable answer. Try again.");
+  }
+}
+
+function renderAiRecommendations(result) {
+  const picks = Array.isArray(result.picks) ? result.picks : [];
+  const cards = picks
+    .map((pick) => {
+      const event = events.find((item) => String(item.id) === String(pick.id));
+      if (!event) return "";
+      return `<article class="ai-pick">
+        <span>${event.category}</span>
+        <h4>${event.title}</h4>
+        <p>${pick.reason || "A good fit for your request."}</p>
+        <div>${event.time} · ${event.place}</div>
+        <button type="button" data-details="${event.id}">View details</button>
+      </article>`;
+    })
+    .filter(Boolean)
+    .join("");
+
+  aiResults.innerHTML = `
+    <div class="ai-summary">${result.summary || "Here are the best matches I found from real events."}</div>
+    ${cards ? `<div class="ai-picks">${cards}</div>` : ""}
+  `;
+}
+
+function openAiGuide() {
+  aiGuide.classList.add("open");
+  aiGuide.setAttribute("aria-hidden", "false");
+  aiToggle.setAttribute("aria-expanded", "true");
+  setTimeout(() => aiPrompt.focus(), 80);
+}
+
+function closeAiGuide() {
+  aiGuide.classList.remove("open");
+  aiGuide.setAttribute("aria-hidden", "true");
+  aiToggle.setAttribute("aria-expanded", "false");
+}
+
 async function loadEventsFromSupabase() {
-  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !window.supabase) {
+  const client = getSupabaseClient();
+  if (!client) {
     render();
     return;
   }
 
   try {
-    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
     const { data, error } = await client
       .from("events")
       .select("*, venues(*), event_sources(*)")
@@ -314,6 +488,105 @@ async function loadEventsFromSupabase() {
   }
 
   render();
+}
+
+function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient;
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !window.supabase) return null;
+
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  return supabaseClient;
+}
+
+async function initAuth() {
+  const client = getSupabaseClient();
+  if (!client) {
+    updateAuthUi(null);
+    return;
+  }
+
+  const { data, error } = await client.auth.getSession();
+  if (!error) updateAuthUi(data.session?.user || null);
+
+  client.auth.onAuthStateChange((_event, session) => {
+    updateAuthUi(session?.user || null);
+  });
+}
+
+function updateAuthUi(user) {
+  currentUser = user;
+  const email = user?.email || "";
+  const initials = email ? email.slice(0, 2).toUpperCase() : "?";
+
+  accountAvatar.textContent = initials;
+  accountLabel.textContent = email ? email.split("@")[0] : "Sign in";
+  authUserEmail.textContent = email;
+  authSession.hidden = !email;
+  authForm.hidden = Boolean(email);
+  authTitle.textContent = email ? "You are signed in." : authMode === "login" ? "Welcome back." : "Create your account.";
+  authSubtitle.textContent = email ? "Your Supabase session is active on this device." : authMode === "login" ? "Log in to keep your Nearo account ready." : "Register with email and password.";
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.authMode === mode);
+  });
+
+  authTitle.textContent = mode === "login" ? "Welcome back." : "Create your account.";
+  authSubtitle.textContent = mode === "login" ? "Log in to keep your Nearo account ready." : "Register with email and password.";
+  authSubmit.textContent = mode === "login" ? "Login" : "Create account";
+  authNote.textContent = mode === "login" ? "Use the email and password you registered with." : "Password should be at least 6 characters.";
+  document.querySelector("#authPassword").autocomplete = mode === "login" ? "current-password" : "new-password";
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  const client = getSupabaseClient();
+  if (!client) {
+    toast("Supabase is not configured yet");
+    return;
+  }
+
+  const formData = new FormData(authForm);
+  const email = String(formData.get("email") || "").trim();
+  const password = String(formData.get("password") || "");
+  if (!email || !password) return;
+
+  authSubmit.disabled = true;
+  authSubmit.textContent = authMode === "login" ? "Logging in..." : "Creating...";
+
+  try {
+    const request = authMode === "login"
+      ? client.auth.signInWithPassword({ email, password })
+      : client.auth.signUp({ email, password });
+    const { data, error } = await request;
+
+    if (error) throw error;
+    updateAuthUi(data.session?.user || null);
+    authForm.reset();
+    toast(authMode === "login" ? "Logged in" : data.session ? "Account created" : "Check your email to confirm");
+  } catch (error) {
+    toast(error.message || "Account request failed");
+  } finally {
+    authSubmit.disabled = false;
+    authSubmit.textContent = authMode === "login" ? "Login" : "Create account";
+  }
+}
+
+async function signOut() {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  const { error } = await client.auth.signOut();
+  if (error) {
+    toast(error.message || "Could not sign out");
+    return;
+  }
+
+  updateAuthUi(null);
+  setAuthMode("login");
+  toast("Signed out");
 }
 
 function normalizeSupabaseEvent(row) {
@@ -484,7 +757,10 @@ function renderSaved() {
         <div>
           <h3>${event.title}</h3>
           <p>${event.time}<br>${event.place}</p>
-          <a class="calendar-link" href="${calendarUrl(event)}" target="_blank" rel="noreferrer">Add to Google Calendar</a>
+          <div class="saved-links">
+            <a class="calendar-link" href="${calendarUrl(event)}" target="_blank" rel="noreferrer">Google Calendar</a>
+            <button class="calendar-link" type="button" data-calendar="${event.id}">Calendar file</button>
+          </div>
         </div>
         <button type="button" data-remove="${event.id}" aria-label="Remove ${event.title}">x</button>
       </div>`).join("")
@@ -654,6 +930,7 @@ function renderMapPreview(event) {
     <p>${event.time} · ${event.place} · ${event.price}</p>
     <div class="preview-actions">
       <button class="preview-save" type="button" data-save="${event.id}">${isSaved ? "Remove plan" : "Save plan"}</button>
+      <button class="preview-calendar" type="button" data-calendar="${event.id}">Calendar</button>
       <button class="preview-details" type="button" data-details="${event.id}">Details</button>
     </div>
   `;
@@ -665,6 +942,84 @@ function calendarUrl(event) {
   const format = (date) => date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${format(start)}/${format(end)}&location=${encodeURIComponent(event.place)}&details=${encodeURIComponent(event.description)}`;
+}
+
+function downloadCalendarFile(id) {
+  const event = events.find((item) => String(item.id) === String(id));
+  if (!event) return;
+
+  const blob = new Blob([icsContent(event)], { type: "text/calendar;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${slugify(event.title)}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  const objectUrl = link.href;
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+  toast("Calendar file downloaded with reminder");
+}
+
+function icsContent(event) {
+  const start = new Date(event.sortDate);
+  const end = new Date(start.getTime() + event.durationHours * 60 * 60 * 1000);
+  const details = [
+    event.description,
+    event.officialUrl ? `Official page: ${event.officialUrl}` : "",
+    event.ticketUrl ? `Tickets: ${event.ticketUrl}` : "",
+  ].filter(Boolean).join("\\n\\n");
+
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Nearo//Event Calendar//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${event.id}@nearo.local`,
+    `DTSTAMP:${icsDate(new Date())}`,
+    `DTSTART:${icsDate(start)}`,
+    `DTEND:${icsDate(end)}`,
+    `SUMMARY:${icsEscape(event.title)}`,
+    `LOCATION:${icsEscape(event.place)}`,
+    `DESCRIPTION:${icsEscape(details)}`,
+    "BEGIN:VALARM",
+    "TRIGGER:-PT30M",
+    "ACTION:DISPLAY",
+    `DESCRIPTION:${icsEscape(`Reminder: ${event.title}`)}`,
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+}
+
+function icsDate(date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+
+function icsEscape(value = "") {
+  return String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\n/g, "\\n");
+}
+
+function slugify(value = "") {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60) || "nearo-event";
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function toggleSave(id) {
@@ -698,6 +1053,7 @@ function openDetails(id) {
       <div class="meta"><span aria-hidden="true">Place</span><span>${event.place}</span></div>
       <div class="dialog-actions">
         <button class="dialog-save" type="button" data-save="${event.id}">${isSaved ? "Remove from plans" : "Save to plans"}</button>
+        <button class="dialog-calendar" type="button" data-calendar="${event.id}">Add calendar</button>
         <a href="${eventLink}" target="_blank" rel="noreferrer">${eventLinkText}</a>
         <button class="dialog-close" type="button" data-close-dialog>Close</button>
       </div>
@@ -742,6 +1098,12 @@ function closeDrawer() {
 }
 
 document.addEventListener("click", (event) => {
+  const authModeButton = event.target.closest("[data-auth-mode]");
+  if (authModeButton) {
+    setAuthMode(authModeButton.dataset.authMode);
+    return;
+  }
+
   const saveButton = event.target.closest("[data-save]");
   if (saveButton) {
     toggleSave(saveButton.dataset.save);
@@ -780,6 +1142,12 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const calendarButton = event.target.closest("[data-calendar]");
+  if (calendarButton) {
+    downloadCalendarFile(calendarButton.dataset.calendar);
+    return;
+  }
+
   const detailsButton = event.target.closest("[data-details]");
   if (detailsButton) {
     openDetails(detailsButton.dataset.details);
@@ -804,6 +1172,10 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-close-dialog]")) {
     eventDialog.close();
   }
+
+  if (event.target.closest("[data-close-auth]")) {
+    authDialog.close();
+  }
 });
 
 document.querySelector("#searchForm").addEventListener("submit", (event) => {
@@ -825,11 +1197,26 @@ sortSelect.addEventListener("change", () => {
   resetPagination();
   render();
 });
+aiGuideForm.addEventListener("submit", askAiGuide);
+aiToggle.addEventListener("click", () => {
+  if (aiGuide.classList.contains("open")) {
+    closeAiGuide();
+  } else {
+    openAiGuide();
+  }
+});
+aiClose.addEventListener("click", closeAiGuide);
 
 document.querySelector("#plansNav").addEventListener("click", openDrawer);
 document.querySelector("#closeDrawer").addEventListener("click", closeDrawer);
 document.querySelector("#scrim").addEventListener("click", closeDrawer);
 document.querySelector("#locationButton").addEventListener("click", () => toast("Showing Singapore events"));
+accountButton.addEventListener("click", () => {
+  setAuthMode(currentUser ? authMode : "login");
+  authDialog.showModal();
+});
+authForm.addEventListener("submit", handleAuthSubmit);
+signOutButton.addEventListener("click", signOut);
 
 document.querySelector("#sharePlans").addEventListener("click", async () => {
   const chosen = events.filter((event) => saved.has(String(event.id)));
@@ -863,12 +1250,15 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeDrawer();
     if (eventDialog.open) eventDialog.close();
+    if (authDialog.open) authDialog.close();
+    closeAiGuide();
   }
 });
 
 window.initGoogleMap = initGoogleMap;
 window.handleGoogleMapError = handleGoogleMapError;
 
+initAuth();
 loadEventsFromSupabase();
 loadGoogleMaps();
 
