@@ -41,27 +41,21 @@
       <section class="hero" id="discover" aria-labelledby="heroTitle">
         <div class="hero-copy">
           <p class="eyebrow"><span></span> Singapore, curated live</p>
-          <h1 id="heroTitle">Find your next good story.</h1>
-          <p class="hero-lede">Concerts, workshops, pop-ups, and neighborhood nights selected around where you are and what you feel like doing.</p>
+          <h1 id="heroTitle"><span class="hero-line">Go somewhere</span> <span class="hero-accent">good.</span></h1>
+          <p class="hero-lede">Concerts, theatre, sports, workshops, and city experiences across Singapore, sorted with official event data and a little AI help.</p>
         </div>
 
         <form class="search-shell" id="searchForm" role="search">
           <label class="search-field" for="searchInput">
-            <span aria-hidden="true">Search</span>
-            <input id="searchInput" type="search" placeholder="Jazz, pottery, Lau Pa Sat..." autocomplete="off" />
+            <input id="searchInput" type="search" placeholder="Search events, artists, venues, weekends..." autocomplete="off" />
           </label>
 
-          <label class="select-field" for="dateSelect">
-            <span>When</span>
-            <select id="dateSelect">
-              <option value="Anytime">Anytime</option>
-              <option value="Today">Today</option>
-              <option value="This weekend" selected>This weekend</option>
-              <option value="Next week">Next week</option>
-            </select>
-          </label>
-
-          <button class="search-button" type="submit">Explore</button>
+          <button class="search-button" type="submit" aria-label="Explore events">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="6"></circle>
+              <path d="m16 16 4 4"></path>
+            </svg>
+          </button>
         </form>
 
         <div class="quick-row" aria-label="Popular searches">
@@ -110,6 +104,7 @@
           <span aria-hidden="true">No results</span>
           <h3>No events found</h3>
           <p>Try another search, date, or category.</p>
+          <button class="empty-ai-button" id="emptyAiButton" type="button">Ask AI for recommendations</button>
         </div>
       </section>
 
@@ -189,7 +184,7 @@
 
     <div class="scrim" id="scrim"></div>
     <section class="ai-guide" id="aiGuide" aria-labelledby="aiGuideTitle" aria-hidden="true">
-      <button class="ai-toggle" id="aiToggle" type="button" aria-expanded="false" aria-controls="aiGuidePanel" aria-label="Open AI guide">AI</button>
+      <button class="ai-toggle ai-toggle-floating" id="aiFloatingToggle" type="button" aria-expanded="false" aria-controls="aiGuidePanel" aria-label="Open AI guide">AI</button>
       <div class="ai-panel" id="aiGuidePanel">
         <div class="ai-guide-copy">
           <div>

@@ -203,6 +203,9 @@ let infoWindow;
 let googleMarkers = new Map();
 let lastFilteredEvents = [];
 let currentPage = 1;
+let aiRecommendationActive = false;
+let aiRecommendedIds = [];
+let aiRecommendationSummary = "";
 let usingFallbackEvents = true;
 let supabaseClient = null;
 let currentUser = null;
@@ -210,6 +213,7 @@ let authMode = "login";
 
 const grid = document.querySelector("#eventGrid");
 const emptyState = document.querySelector("#emptyState");
+const emptyAiButton = document.querySelector("#emptyAiButton");
 const planCount = document.querySelector("#planCount");
 const searchInput = document.querySelector("#searchInput");
 const dateSelect = document.querySelector("#dateSelect");
@@ -218,7 +222,7 @@ const resultsMeta = document.querySelector("#resultsMeta");
 const pagination = document.querySelector("#pagination");
 const aiGuideForm = document.querySelector("#aiGuideForm");
 const aiGuide = document.querySelector("#aiGuide");
-const aiToggle = document.querySelector("#aiToggle");
+const aiToggles = document.querySelectorAll("#aiToggle, #aiFloatingToggle");
 const aiClose = document.querySelector("#aiClose");
 const aiPrompt = document.querySelector("#aiPrompt");
 const aiGuideButton = document.querySelector("#aiGuideButton");
@@ -289,9 +293,11 @@ function eventCard(event) {
   </article>`;
 }
 
-function getFilteredEvents() {
+function getFilteredEvents(options = {}) {
+  if (aiRecommendationActive && !options.ignoreAiRecommendations) return getAiRecommendedEvents();
+
   const query = searchInput.value.trim().toLowerCase();
-  const date = dateSelect.value;
+  const date = dateSelect?.value || "Anytime";
   const sort = sortSelect.value;
 
   const filtered = events.filter((event) => {
@@ -309,16 +315,20 @@ function getFilteredEvents() {
   });
 }
 
+function getAiRecommendedEvents() {
+  const ids = new Set(aiRecommendedIds.map(String));
+  return events.filter((event) => ids.has(String(event.id)));
+}
+
 async function askAiGuide(event) {
   event.preventDefault();
-  const prompt = aiPrompt.value.trim();
+  await runAiGuide(aiPrompt.value);
+}
+
+async function runAiGuide(rawPrompt) {
+  const prompt = rawPrompt.trim();
   if (!prompt) {
     toast("Tell the AI what you feel like doing");
-    return;
-  }
-
-  if (!GEMINI_API_KEY) {
-    aiResults.innerHTML = `<div class="ai-empty">Add your Gemini API key in local config.js to enable AI picks.</div>`;
     return;
   }
 
@@ -345,7 +355,7 @@ async function askAiGuide(event) {
 }
 
 function getAiEventCandidates() {
-  const filtered = getFilteredEvents();
+  const filtered = getFilteredEvents({ ignoreAiRecommendations: true });
   const source = filtered.length ? filtered : events;
   return source.slice(0, 80).map((event) => ({
     id: String(event.id),
@@ -360,6 +370,19 @@ function getAiEventCandidates() {
 }
 
 async function fetchGeminiRecommendations(prompt, candidates) {
+  if (shouldUseLocalGeminiKey()) {
+    return fetchGeminiFromBrowserKey(prompt, candidates);
+  }
+
+  return fetchGeminiFromFunction(prompt, candidates);
+}
+
+function shouldUseLocalGeminiKey() {
+  const localHostnames = ["", "localhost", "127.0.0.1"];
+  return Boolean(GEMINI_API_KEY) && (window.location.protocol === "file:" || localHostnames.includes(window.location.hostname));
+}
+
+async function fetchGeminiFromBrowserKey(prompt, candidates) {
   let lastError = null;
 
   for (const model of GEMINI_FALLBACK_MODELS) {
@@ -372,6 +395,47 @@ async function fetchGeminiRecommendations(prompt, candidates) {
   }
 
   throw lastError || new Error("Gemini request failed");
+}
+
+async function fetchGeminiFromFunction(prompt, candidates) {
+  const endpoints = ["/api/gemini-guide", "/.netlify/functions/gemini-guide"];
+  let lastError = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      return await postGeminiRequest(endpoint, prompt, candidates);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("AI server is not reachable.");
+}
+
+async function postGeminiRequest(endpoint, prompt, candidates) {
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, candidates }),
+    });
+  } catch {
+    throw new Error("AI server is not reachable. Check that the site was deployed with the AI endpoint and GEMINI_API_KEY environment variable.");
+  }
+
+  const payload = await parseJsonResponse(response);
+  if (!response.ok) throw new Error(payload.error || "AI guide could not answer right now.");
+
+  return payload;
+}
+
+async function parseJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return { error: "AI server returned an invalid response. Check the hosting function logs." };
+  }
 }
 
 async function fetchGeminiWithModel(model, prompt, candidates) {
@@ -422,6 +486,16 @@ function parseGeminiJson(text) {
 
 function renderAiRecommendations(result) {
   const picks = Array.isArray(result.picks) ? result.picks : [];
+  const pickedIds = picks
+    .map((pick) => String(pick.id))
+    .filter((id) => events.some((event) => String(event.id) === id));
+
+  aiRecommendedIds = pickedIds;
+  aiRecommendationSummary = result.summary || "";
+  aiRecommendationActive = true;
+  resetPagination();
+  render();
+
   const cards = picks
     .map((pick) => {
       const event = events.find((item) => String(item.id) === String(pick.id));
@@ -441,19 +515,25 @@ function renderAiRecommendations(result) {
     <div class="ai-summary">${result.summary || "Here are the best matches I found from real events."}</div>
     ${cards ? `<div class="ai-picks">${cards}</div>` : ""}
   `;
+
+  if (pickedIds.length) {
+    document.querySelector(".content-section").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
-function openAiGuide() {
+function openAiGuide(options = {}) {
   aiGuide.classList.add("open");
   aiGuide.setAttribute("aria-hidden", "false");
-  aiToggle.setAttribute("aria-expanded", "true");
-  setTimeout(() => aiPrompt.focus(), 80);
+  aiToggles.forEach((button) => button.setAttribute("aria-expanded", "true"));
+  if (options.focusPrompt !== false) {
+    setTimeout(() => aiPrompt.focus(), 80);
+  }
 }
 
 function closeAiGuide() {
   aiGuide.classList.remove("open");
   aiGuide.setAttribute("aria-hidden", "true");
-  aiToggle.setAttribute("aria-expanded", "false");
+  aiToggles.forEach((button) => button.setAttribute("aria-expanded", "false"));
 }
 
 async function loadEventsFromSupabase() {
@@ -698,11 +778,27 @@ function render() {
   lastFilteredEvents = filtered;
   grid.innerHTML = pageEvents.map(eventCard).join("");
   emptyState.hidden = filtered.length !== 0;
+  if (!filtered.length) {
+    const query = searchInput.value.trim();
+    emptyState.querySelector("h3").textContent = aiRecommendationActive ? "No AI picks yet" : "No events found";
+    emptyState.querySelector("p").textContent = aiRecommendationActive
+      ? "Try asking for a broader mood, date, or budget."
+      : query
+        ? `No exact match for "${query}". Want AI to recommend something close?`
+        : "Try another search, date, or category.";
+    emptyAiButton.hidden = aiRecommendationActive || !query;
+  }
   planCount.textContent = saved.size;
 
-  const noun = filtered.length === 1 ? "event" : "events";
-  const pageText = filtered.length ? `Showing ${pageStart + 1}-${pageStart + pageEvents.length} of ` : "";
-  resultsMeta.textContent = usingFallbackEvents ? `${pageText}${filtered.length} demo ${noun}` : `${pageText}${filtered.length} ${noun} from Supabase`;
+  if (aiRecommendationActive) {
+    const noun = filtered.length === 1 ? "event" : "events";
+    const pageText = filtered.length ? `Showing ${pageStart + 1}-${pageStart + pageEvents.length} of ` : "";
+    resultsMeta.textContent = `${pageText}${filtered.length} AI recommended ${noun}${aiRecommendationSummary ? ` · ${aiRecommendationSummary}` : ""}`;
+  } else {
+    const noun = filtered.length === 1 ? "event" : "events";
+    const pageText = filtered.length ? `Showing ${pageStart + 1}-${pageStart + pageEvents.length} of ` : "";
+    resultsMeta.textContent = usingFallbackEvents ? `${pageText}${filtered.length} demo ${noun}` : `${pageText}${filtered.length} ${noun} from Supabase`;
+  }
 
   renderSaved();
   renderPagination(totalPages);
@@ -745,6 +841,12 @@ function paginationPages(totalPages) {
 
 function resetPagination() {
   currentPage = 1;
+}
+
+function clearAiRecommendations() {
+  aiRecommendationActive = false;
+  aiRecommendedIds = [];
+  aiRecommendationSummary = "";
 }
 
 function renderSaved() {
@@ -1118,6 +1220,7 @@ document.addEventListener("click", (event) => {
 
   const filterButton = event.target.closest(".filter");
   if (filterButton) {
+    clearAiRecommendations();
     activeCategory = filterButton.dataset.category;
     resetPagination();
     document.querySelectorAll(".filter").forEach((button) => button.classList.toggle("active", button === filterButton));
@@ -1127,6 +1230,7 @@ document.addEventListener("click", (event) => {
 
   const popularButton = event.target.closest("[data-query]");
   if (popularButton) {
+    clearAiRecommendations();
     searchInput.value = popularButton.dataset.query;
     resetPagination();
     render();
@@ -1181,31 +1285,43 @@ document.addEventListener("click", (event) => {
 document.querySelector("#searchForm").addEventListener("submit", (event) => {
   event.preventDefault();
   resetPagination();
+  clearAiRecommendations();
   render();
   document.querySelector(".content-section").scrollIntoView({ behavior: "smooth" });
 });
 
 searchInput.addEventListener("input", () => {
+  clearAiRecommendations();
   resetPagination();
   render();
 });
-dateSelect.addEventListener("change", () => {
+dateSelect?.addEventListener("change", () => {
+  clearAiRecommendations();
   resetPagination();
   render();
 });
 sortSelect.addEventListener("change", () => {
+  clearAiRecommendations();
   resetPagination();
   render();
 });
 aiGuideForm.addEventListener("submit", askAiGuide);
-aiToggle.addEventListener("click", () => {
+aiToggles.forEach((button) => button.addEventListener("click", () => {
   if (aiGuide.classList.contains("open")) {
     closeAiGuide();
   } else {
     openAiGuide();
   }
-});
+}));
 aiClose.addEventListener("click", closeAiGuide);
+emptyAiButton.addEventListener("click", () => {
+  const prompt = searchInput.value.trim();
+  if (!prompt) return;
+
+  aiPrompt.value = prompt;
+  openAiGuide({ focusPrompt: false });
+  runAiGuide(prompt);
+});
 
 document.querySelector("#plansNav").addEventListener("click", openDrawer);
 document.querySelector("#closeDrawer").addEventListener("click", closeDrawer);
@@ -1237,9 +1353,10 @@ document.querySelector("#sharePlans").addEventListener("click", async () => {
 });
 
 document.querySelector("#seeAll").addEventListener("click", () => {
+  clearAiRecommendations();
   activeCategory = "All";
   searchInput.value = "";
-  dateSelect.value = "Anytime";
+  if (dateSelect) dateSelect.value = "Anytime";
   sortSelect.value = "recommended";
   resetPagination();
   document.querySelectorAll(".filter").forEach((button, index) => button.classList.toggle("active", index === 0));
