@@ -170,6 +170,7 @@ const fallbackEvents = [
 ];
 
 const STORAGE_KEY = "nearo.saved";
+const APP_VERSION = "2026-06-25-sistic-image-fallback";
 const EVENTS_PER_PAGE = 12;
 const GOOGLE_MAPS_API_KEY = window.NEARO_CONFIG?.GOOGLE_MAPS_API_KEY || "";
 const SUPABASE_URL = window.NEARO_CONFIG?.SUPABASE_URL || "";
@@ -257,6 +258,8 @@ const authSession = document.querySelector("#authSession");
 const authUserEmail = document.querySelector("#authUserEmail");
 const signOutButton = document.querySelector("#signOutButton");
 
+console.info(`Nearo ${APP_VERSION}`);
+
 function readSaved() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[1,3]");
@@ -276,10 +279,9 @@ function writeSaved() {
 
 function eventCard(event) {
   const isSaved = saved.has(String(event.id));
-  const image = eventImage(event);
 
   return `<article class="event-card" data-card="${event.id}">
-    <div class="event-image" style="background-image: url('${image}')">
+    <div class="event-image" style="${eventImageStyle(event)}">
       <div class="date-badge"><span>${event.month}</span><strong>${event.day}</strong></div>
       <button class="save-button ${isSaved ? "saved" : ""}" type="button" data-save="${event.id}" aria-label="${isSaved ? "Remove from" : "Save to"} plans">${isSaved ? "♥" : "♡"}</button>
     </div>
@@ -335,6 +337,17 @@ function eventImage(event) {
   if (event.image) return event.image;
   if (String(event.availability || "").toLowerCase().includes("sistic")) return FALLBACK_IMAGES.SISTIC;
   return FALLBACK_IMAGES[event.category] || FALLBACK_IMAGES.Event;
+}
+
+function eventImageStyle(event) {
+  const fallback = fallbackImageFor(event.category, event.availability);
+  const image = event.image && event.image !== fallback ? event.image : "";
+  const images = [image, fallback].filter(Boolean).map((url) => `url('${escapeCssUrl(url)}')`).join(", ");
+  return `background-image: ${images}`;
+}
+
+function escapeCssUrl(value = "") {
+  return String(value).replace(/['"\\()]/g, "\\$&");
 }
 
 async function askAiGuide(event) {
@@ -880,7 +893,7 @@ function renderSaved() {
 
   container.innerHTML = chosen.length
     ? chosen.map((event) => `<div class="saved-item">
-        <div class="saved-thumb" style="background-image: url('${eventImage(event)}')"></div>
+        <div class="saved-thumb" style="${eventImageStyle(event)}"></div>
         <div>
           <h3>${event.title}</h3>
           <p>${event.time}<br>${event.place}</p>
@@ -1171,7 +1184,7 @@ function openDetails(id) {
   const eventLink = event.ticketUrl || event.officialUrl || calendarUrl(event);
   const eventLinkText = event.ticketUrl ? "Get tickets" : event.officialUrl ? "Official page" : "Add to calendar";
   dialogContent.innerHTML = `
-    <div class="dialog-media" style="background-image: url('${eventImage(event)}')"></div>
+    <div class="dialog-media" style="${eventImageStyle(event)}"></div>
     <div class="dialog-body">
       <span class="card-tag">${event.category}</span>
       <h2 id="dialogTitle">${event.title}</h2>

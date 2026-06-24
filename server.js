@@ -77,7 +77,9 @@ function serveStatic(request, response) {
 
       response.writeHead(200, securityHeaders({
         "Content-Type": mimeTypes[extension] || "application/octet-stream",
-        "Cache-Control": finalPath.endsWith("config.js") ? "public, max-age=60" : "public, max-age=300",
+        "Cache-Control": finalPath.endsWith("index.html") || finalPath.endsWith("config.js")
+          ? "no-cache"
+          : "public, max-age=60",
       }));
 
       if (request.method === "HEAD") response.end();
