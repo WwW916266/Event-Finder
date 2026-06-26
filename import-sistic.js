@@ -69,7 +69,8 @@ async function fetchSisticEvents() {
       Referer: "https://www.sistic.com.sg/events",
     },
   });
-  const payload = await response.json();
+  const text = await response.text();
+  const payload = parseJson(text, "SISTIC");
 
   if (!response.ok) {
     throw new Error(payload?.data || payload?.message || "SISTIC request failed");
@@ -245,13 +246,22 @@ function numberOrNull(value) {
 async function supabaseFetch(path, options) {
   const response = await fetch(`${SUPABASE_URL}${path}`, options);
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  const payload = text ? parseJson(text, "Supabase") : null;
 
   if (!response.ok) {
     throw new Error(payload?.message || payload?.hint || text || "Supabase request failed");
   }
 
   return payload || [];
+}
+
+function parseJson(text, source) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const preview = text.replace(/\s+/g, " ").trim().slice(0, 120);
+    throw new Error(`${source} returned non-JSON content: ${preview || "empty response"}`);
+  }
 }
 
 main().catch((error) => {

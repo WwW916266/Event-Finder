@@ -212,6 +212,7 @@ let activeMapId = events[0].id;
 let googleMap;
 let infoWindow;
 let googleMarkers = new Map();
+let googleClusterMarkers = [];
 let lastFilteredEvents = [];
 let currentPage = 1;
 let aiRecommendationActive = false;
@@ -280,7 +281,7 @@ function writeSaved() {
 function eventCard(event) {
   const isSaved = saved.has(String(event.id));
 
-  return `<article class="event-card" data-card="${event.id}">
+  return `<article class="event-card" data-card="${event.id}" data-details="${event.id}" tabindex="0" role="button" aria-label="View details for ${escapeHtml(event.title)}">
     <div class="event-image" style="${eventImageStyle(event)}">
       <div class="date-badge"><span>${event.month}</span><strong>${event.day}</strong></div>
       <button class="save-button ${isSaved ? "saved" : ""}" type="button" data-save="${event.id}" aria-label="${isSaved ? "Remove from" : "Save to"} plans">${isSaved ? "♥" : "♡"}</button>
@@ -288,19 +289,22 @@ function eventCard(event) {
     <div class="card-body">
       <div class="card-topline">
         <span class="card-tag">${event.category}</span>
-        <span class="availability">${event.availability}</span>
+        <span class="availability">${sourceBadge(event)}</span>
       </div>
       <h3>${event.title}</h3>
-      <div class="meta"><span aria-hidden="true">Time</span><span>${event.time}</span></div>
-      <div class="meta"><span aria-hidden="true">Place</span><span>${event.place}</span></div>
+      <div class="meta"><span aria-hidden="true">↗</span><span>${event.time}</span></div>
+      <div class="meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
       <div class="card-footer">
         <div class="attendees"><span class="mini-avatar">M</span><span class="mini-avatar">J</span><span>${event.people}</span></div>
-        <span class="price">${event.price}</span>
-      </div>
-      <div class="card-actions">
-        <button class="details-button" type="button" data-details="${event.id}">View details</button>
-        <button class="calendar-button" type="button" data-calendar="${event.id}">Calendar</button>
-        <button class="map-jump" type="button" data-map="${event.id}">Map</button>
+        <div class="card-utility">
+          <span class="price">${event.price}</span>
+          <button class="icon-action" type="button" data-calendar="${event.id}" aria-label="Add ${escapeHtml(event.title)} to calendar">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"></path></svg>
+          </button>
+          <button class="icon-action" type="button" data-map="${event.id}" aria-label="Show ${escapeHtml(event.title)} on map">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s7-5.15 7-11a7 7 0 1 0-14 0c0 5.85 7 11 7 11Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
+          </button>
+        </div>
       </div>
     </div>
   </article>`;
@@ -348,6 +352,16 @@ function eventImageStyle(event) {
 
 function escapeCssUrl(value = "") {
   return String(value).replace(/['"\\()]/g, "\\$&");
+}
+
+function sourceBadge(event) {
+  const source = String(event.availability || "Official listing");
+  const value = source.toLowerCase();
+  let label = source;
+  if (value.includes("sistic")) label = "SISTIC";
+  if (value.includes("ticketmaster")) label = "Ticketmaster";
+  if (value.includes("eventbrite")) label = "Eventbrite";
+  return label.length > 24 ? `${label.slice(0, 21)}...` : label;
 }
 
 async function askAiGuide(event) {
@@ -816,6 +830,7 @@ function render() {
   lastFilteredEvents = filtered;
   grid.innerHTML = pageEvents.map(eventCard).join("");
   emptyState.hidden = filtered.length !== 0;
+  if (filtered.length) emptyAiButton.hidden = true;
   if (!filtered.length) {
     const query = searchInput.value.trim();
     emptyState.querySelector("h3").textContent = aiRecommendationActive ? "No AI picks yet" : "No events found";
@@ -835,7 +850,10 @@ function render() {
   } else {
     const noun = filtered.length === 1 ? "event" : "events";
     const pageText = filtered.length ? `Showing ${pageStart + 1}-${pageStart + pageEvents.length} of ` : "";
-    resultsMeta.textContent = usingFallbackEvents ? `${pageText}${filtered.length} demo ${noun}` : `${pageText}${filtered.length} ${noun} from Supabase`;
+    const queryText = searchInput.value.trim() ? ` for "${searchInput.value.trim()}"` : "";
+    resultsMeta.textContent = usingFallbackEvents
+      ? `${pageText}${filtered.length} demo ${noun}${queryText}`
+      : `${pageText}${filtered.length} official ${noun}${queryText}`;
   }
 
   renderSaved();
@@ -923,12 +941,18 @@ function renderMap(filtered) {
   const visibleIds = new Set(filtered.map((event) => String(event.id)));
   if (!visibleIds.has(String(activeMapId)) && filtered.length) activeMapId = filtered[0].id;
 
-  renderFallbackMap(filtered);
-  updateGoogleMarkers(filtered);
+  const mapEvents = mapLayerEvents(filtered);
+  renderFallbackMap(mapEvents, visibleIds);
+  updateGoogleMarkers(mapEvents, visibleIds);
   renderMapPreview(events.find((event) => String(event.id) === String(activeMapId)) || filtered[0]);
 }
 
-function renderFallbackMap(filtered) {
+function mapLayerEvents(filtered) {
+  if (aiRecommendationActive || searchInput.value.trim()) return filtered;
+  return activeCategory === "All" ? filtered : events;
+}
+
+function renderFallbackMap(mapEvents, visibleIds) {
   const roads = [
     { left: 8, top: 35, width: 70, rotate: 12 },
     { left: 17, top: 72, width: 78, rotate: -18 },
@@ -936,10 +960,33 @@ function renderFallbackMap(filtered) {
     { left: 48, top: 16, width: 56, rotate: 95 },
   ];
 
+  const clusters = clusterFallbackEvents(mapEvents);
   mapFallback.innerHTML = roads.map((road) => `<span class="map-road" style="left: ${road.left}%; top: ${road.top}%; width: ${road.width}%; transform: rotate(${road.rotate}deg);"></span>`).join("") +
-    filtered.map((event) => `<button class="event-pin ${String(event.id) === String(activeMapId) ? "active" : ""}" type="button" data-pin="${event.id}" style="left: ${event.map.x}%; top: ${event.map.y}%;" aria-label="Preview ${event.title}">
-      <span class="pin-bubble"><span>${event.category.slice(0, 1)}</span></span>
-    </button>`).join("");
+    clusters.map((cluster) => cluster.events.length > 1
+      ? `<button class="event-cluster ${cluster.events.some((event) => String(event.id) === String(activeMapId)) ? "active" : ""} ${cluster.events.some((event) => visibleIds.has(String(event.id))) ? "" : "dimmed"}" type="button" data-pin="${cluster.events.find((event) => visibleIds.has(String(event.id)))?.id || cluster.events[0].id}" style="left: ${cluster.x}%; top: ${cluster.y}%;" aria-label="Preview ${cluster.events.length} nearby events">
+          <span>+${cluster.events.length}</span>
+        </button>`
+      : cluster.events.map((event) => `<button class="event-pin ${String(event.id) === String(activeMapId) ? "active" : ""} ${visibleIds.has(String(event.id)) ? "" : "dimmed"}" type="button" data-pin="${event.id}" style="left: ${event.map.x}%; top: ${event.map.y}%;" aria-label="Preview ${event.title}">
+          <span class="pin-bubble"><span>${event.category.slice(0, 1)}</span></span>
+        </button>`).join("")).join("");
+}
+
+function clusterFallbackEvents(mapEvents) {
+  const clusters = [];
+  const threshold = activeCategory === "All" ? 7 : 6;
+
+  mapEvents.forEach((event) => {
+    const cluster = clusters.find((item) => Math.hypot(item.x - event.map.x, item.y - event.map.y) < threshold);
+    if (cluster) {
+      cluster.events.push(event);
+      cluster.x = cluster.events.reduce((sum, item) => sum + item.map.x, 0) / cluster.events.length;
+      cluster.y = cluster.events.reduce((sum, item) => sum + item.map.y, 0) / cluster.events.length;
+    } else {
+      clusters.push({ x: event.map.x, y: event.map.y, events: [event] });
+    }
+  });
+
+  return clusters;
 }
 
 function initGoogleMap() {
@@ -956,26 +1003,38 @@ function initGoogleMap() {
     styles: MAP_STYLE,
   });
 
+  googleMap.addListener("idle", () => {
+    const filtered = lastFilteredEvents.length ? lastFilteredEvents : getFilteredEvents();
+    updateGoogleMarkers(mapLayerEvents(filtered), new Set(filtered.map((event) => String(event.id))), { fitBounds: false });
+  });
+
   infoWindow = new google.maps.InfoWindow();
   mapPanel.classList.add("maps-ready");
   mapPanel.classList.remove("maps-failed");
-  updateGoogleMarkers(lastFilteredEvents.length ? lastFilteredEvents : getFilteredEvents());
+  const filtered = lastFilteredEvents.length ? lastFilteredEvents : getFilteredEvents();
+  updateGoogleMarkers(mapLayerEvents(filtered), new Set(filtered.map((event) => String(event.id))));
 }
 
-function updateGoogleMarkers(filtered) {
+function updateGoogleMarkers(mapEvents, visibleIds = new Set(mapEvents.map((event) => String(event.id))), options = {}) {
   if (!googleMap || !window.google) return;
 
-  const visibleIds = new Set(filtered.map((event) => String(event.id)));
+  const clusters = clusterGoogleEvents(mapEvents);
+  const singletonEvents = clusters.filter((cluster) => cluster.events.length === 1).map((cluster) => cluster.events[0]);
+  const singletonIds = new Set(singletonEvents.map((event) => String(event.id)));
+
+  googleClusterMarkers.forEach((marker) => marker.setMap(null));
+  googleClusterMarkers = [];
+
   googleMarkers.forEach((marker, id) => {
-    if (!visibleIds.has(String(id))) {
+    if (!singletonIds.has(String(id))) {
       marker.setMap(null);
       googleMarkers.delete(id);
     }
   });
 
-  filtered.forEach((event) => {
+  singletonEvents.forEach((event) => {
     let marker = googleMarkers.get(event.id);
-    const icon = markerIcon(String(event.id) === String(activeMapId));
+    const icon = markerIcon(String(event.id) === String(activeMapId), visibleIds.has(String(event.id)));
 
     if (!marker) {
       marker = new google.maps.Marker({
@@ -1000,28 +1059,82 @@ function updateGoogleMarkers(filtered) {
     }
   });
 
-  if (filtered.length) {
+  clusters.filter((cluster) => cluster.events.length > 1).forEach((cluster) => {
+    const marker = new google.maps.Marker({
+      position: cluster.coords,
+      map: googleMap,
+      title: `${cluster.events.length} nearby events`,
+      icon: clusterIcon(cluster.events.length, cluster.events.some((event) => visibleIds.has(String(event.id)))),
+      zIndex: 10,
+    });
+    marker.addListener("click", () => {
+      const event = cluster.events.find((item) => visibleIds.has(String(item.id))) || cluster.events[0];
+      activeMapId = event.id;
+      renderMapPreview(event);
+      highlightActiveMarker();
+      highlightCard(event.id);
+      infoWindow.setContent(infoWindowHtml(event));
+      infoWindow.open({ map: googleMap, anchor: marker });
+    });
+    googleClusterMarkers.push(marker);
+  });
+
+  if (mapEvents.length && options.fitBounds !== false) {
     const bounds = new google.maps.LatLngBounds();
-    filtered.forEach((event) => bounds.extend(event.coords));
+    mapEvents.forEach((event) => bounds.extend(event.coords));
     googleMap.fitBounds(bounds, 70);
-    if (filtered.length === 1) googleMap.setZoom(14);
+    if (mapEvents.length === 1) googleMap.setZoom(14);
   }
 
   highlightActiveMarker();
 }
 
-function markerIcon(active) {
+function clusterGoogleEvents(mapEvents) {
+  const clusters = [];
+  const zoom = googleMap?.getZoom?.() || 12;
+  const baseThreshold = activeCategory === "All" ? 0.012 : 0.01;
+  const threshold = zoom >= 15 ? 0.0025 : zoom >= 14 ? 0.0045 : zoom >= 13 ? 0.007 : baseThreshold;
+
+  mapEvents.forEach((event) => {
+    const cluster = clusters.find((item) => Math.hypot(item.coords.lat - event.coords.lat, item.coords.lng - event.coords.lng) < threshold);
+    if (cluster) {
+      cluster.events.push(event);
+      cluster.coords = {
+        lat: cluster.events.reduce((sum, item) => sum + item.coords.lat, 0) / cluster.events.length,
+        lng: cluster.events.reduce((sum, item) => sum + item.coords.lng, 0) / cluster.events.length,
+      };
+    } else {
+      clusters.push({ coords: { ...event.coords }, events: [event] });
+    }
+  });
+
+  return clusters;
+}
+
+function markerIcon(active, focused = true) {
   const fill = active ? "#ff5b45" : "#d9f06d";
   const stroke = active ? "#ffffff" : "#17231f";
 
   return {
     path: "M12 2C7.03 2 3 5.83 3 10.55c0 6.25 9 11.45 9 11.45s9-5.2 9-11.45C21 5.83 16.97 2 12 2zm0 11.7a3.15 3.15 0 1 1 0-6.3 3.15 3.15 0 0 1 0 6.3z",
     fillColor: fill,
-    fillOpacity: 1,
+    fillOpacity: focused ? 1 : 0.2,
     strokeColor: stroke,
+    strokeOpacity: focused ? 1 : 0.26,
     strokeWeight: 2,
     scale: 1.55,
     anchor: new google.maps.Point(12, 23),
+  };
+}
+
+function clusterIcon(count, focused = true) {
+  const fill = focused ? "#17231f" : "#8d9a94";
+  const text = `+${count}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="54" height="54" viewBox="0 0 54 54"><circle cx="27" cy="27" r="22" fill="${fill}" fill-opacity="${focused ? "0.96" : "0.35"}" stroke="white" stroke-width="3"/><text x="27" y="32" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="white">${text}</text></svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(54, 54),
+    anchor: new google.maps.Point(27, 27),
   };
 }
 
@@ -1029,7 +1142,9 @@ function highlightActiveMarker() {
   if (!googleMap || !window.google) return;
 
   googleMarkers.forEach((marker, id) => {
-    marker.setIcon(markerIcon(String(id) === String(activeMapId)));
+    const event = events.find((item) => String(item.id) === String(id));
+    const focused = !event || activeCategory === "All" || event.category === activeCategory || aiRecommendationActive || searchInput.value.trim();
+    marker.setIcon(markerIcon(String(id) === String(activeMapId), focused));
     marker.setZIndex(String(id) === String(activeMapId) ? 20 : 1);
   });
 
@@ -1046,10 +1161,11 @@ function highlightCard(id) {
 }
 
 function infoWindowHtml(event) {
-  return `<div style="max-width:220px;color:#17231f;font-family:DM Sans,Arial,sans-serif;">
-    <strong style="display:block;margin-bottom:4px;font-size:14px;">${event.title}</strong>
-    <span style="display:block;color:#68746f;font-size:12px;">${event.time}</span>
-    <span style="display:block;color:#68746f;font-size:12px;">${event.place} · ${event.price}</span>
+  return `<div style="max-width:250px;color:#17231f;font-family:DM Sans,Arial,sans-serif;padding:2px 0;">
+    <span style="display:block;margin-bottom:5px;color:#ff5b45;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;">${event.category}</span>
+    <strong style="display:block;margin-bottom:8px;font-size:15px;line-height:1.25;">${event.title}</strong>
+    <span style="display:flex;gap:7px;margin-bottom:5px;color:#68746f;font-size:12px;line-height:1.35;"><span aria-hidden="true">↗</span>${event.time}</span>
+    <span style="display:flex;gap:7px;color:#68746f;font-size:12px;line-height:1.35;"><span aria-hidden="true">⌖</span>${event.place}</span>
   </div>`;
 }
 
@@ -1067,11 +1183,15 @@ function renderMapPreview(event) {
   mapPreview.innerHTML = `
     <span class="card-tag">${event.category}</span>
     <h3>${event.title}</h3>
-    <p>${event.time} · ${event.place} · ${event.price}</p>
+    <div class="preview-meta"><span aria-hidden="true">↗</span><span>${event.time}</span></div>
+    <div class="preview-meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
+    <div class="preview-price">${event.price}</div>
     <div class="preview-actions">
-      <button class="preview-save" type="button" data-save="${event.id}">${isSaved ? "Remove plan" : "Save plan"}</button>
-      <button class="preview-calendar" type="button" data-calendar="${event.id}">Calendar</button>
-      <button class="preview-details" type="button" data-details="${event.id}">Details</button>
+      <button class="preview-details" type="button" data-details="${event.id}">View details</button>
+      <button class="preview-icon ${isSaved ? "saved" : ""}" type="button" data-save="${event.id}" aria-label="${isSaved ? "Remove from" : "Save to"} plans">${isSaved ? "♥" : "♡"}</button>
+      <button class="preview-icon" type="button" data-calendar="${event.id}" aria-label="Add to calendar">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"></path></svg>
+      </button>
     </div>
   `;
 }
@@ -1189,8 +1309,8 @@ function openDetails(id) {
       <span class="card-tag">${event.category}</span>
       <h2 id="dialogTitle">${event.title}</h2>
       <p>${event.description}</p>
-      <div class="meta"><span aria-hidden="true">Time</span><span>${event.time}</span></div>
-      <div class="meta"><span aria-hidden="true">Place</span><span>${event.place}</span></div>
+      <div class="meta"><span aria-hidden="true">↗</span><span>${event.time}</span></div>
+      <div class="meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
       <div class="dialog-actions">
         <button class="dialog-save" type="button" data-save="${event.id}">${isSaved ? "Remove from plans" : "Save to plans"}</button>
         <button class="dialog-calendar" type="button" data-calendar="${event.id}">Add calendar</button>
@@ -1238,6 +1358,8 @@ function closeDrawer() {
 }
 
 document.addEventListener("click", (event) => {
+  const cardAction = event.target.closest("button, a, select, input, textarea");
+
   const authModeButton = event.target.closest("[data-auth-mode]");
   if (authModeButton) {
     setAuthMode(authModeButton.dataset.authMode);
@@ -1291,7 +1413,7 @@ document.addEventListener("click", (event) => {
   }
 
   const detailsButton = event.target.closest("[data-details]");
-  if (detailsButton) {
+  if (detailsButton && !cardAction) {
     openDetails(detailsButton.dataset.details);
     return;
   }
@@ -1402,6 +1524,14 @@ document.querySelector("#seeAll").addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if ((event.key === "Enter" || event.key === " ") && event.target.closest(".event-card[data-details]")) {
+    const card = event.target.closest(".event-card[data-details]");
+    if (!event.target.closest("button, a, select, input, textarea")) {
+      event.preventDefault();
+      openDetails(card.dataset.details);
+    }
+  }
+
   if (event.key === "Escape") {
     closeDrawer();
     if (eventDialog.open) eventDialog.close();

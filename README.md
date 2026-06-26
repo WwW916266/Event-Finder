@@ -13,7 +13,7 @@ Nearo is a mobile-first local event discovery prototype for Singapore. It helps 
 - Share saved weekend plans
 - Preview events on Google Maps with a built-in fallback map
 - Load published events from Supabase
-- Import official Singapore events from Ticketmaster and SISTIC
+- Import official Singapore events from Ticketmaster, SISTIC, and Eventbrite
 - Open event detail dialogs
 - Responsive desktop and mobile layout
 
@@ -74,11 +74,18 @@ Render will provide a public URL after deploy. The app serves the website and th
 Use these local-only importers when you want to refresh the database:
 
 ```text
-node import-ticketmaster.js
-node import-sistic.js
+npm run refresh-events
 ```
 
-The importers read private keys from ignored `config.js`, then upsert official event listings into Supabase without committing secrets.
+Or run one source at a time:
+
+```text
+node import-ticketmaster.js
+node import-sistic.js
+node import-eventbrite.js
+```
+
+The importers read private keys from ignored `config.js`, then upsert official event listings into Supabase without committing secrets. Eventbrite needs a local `EVENTBRITE_PRIVATE_TOKEN`; the refresh-all command skips Eventbrite until that token is added.
 
 If existing SISTIC events are missing artwork, run `node import-sistic.js` again after pulling the latest code. The importer now checks multiple SISTIC image fields and normalizes relative image URLs.
 
@@ -95,8 +102,10 @@ netlify.toml       Netlify hosting and security header settings
 netlify/functions  Private serverless functions, including Gemini AI guide
 package.json       Render build/start scripts
 config.example.js  Template for local Google Maps, Supabase, and importer keys
+import-all-events.js     Runs every configured event importer
 import-ticketmaster.js  Ticketmaster Singapore importer
 import-sistic.js        SISTIC Singapore importer
+import-eventbrite.js    Eventbrite Singapore activity importer
 ```
 
 ## Notes

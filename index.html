@@ -72,7 +72,6 @@
             <p class="kicker">Made for you</p>
             <h2 id="eventsTitle">Your city, sorted.</h2>
           </div>
-          <button class="text-button" id="seeAll" type="button">Reset view <span aria-hidden="true">-></span></button>
         </div>
 
         <div class="toolbar">
@@ -86,15 +85,18 @@
             <button class="filter" type="button" data-category="Learning">Workshops</button>
           </div>
 
-          <label class="sort-field" for="sortSelect">
-            <span>Sort</span>
-            <select id="sortSelect">
-              <option value="recommended">Recommended</option>
-              <option value="soonest">Soonest</option>
-              <option value="distance">Nearest</option>
-              <option value="price">Lowest price</option>
-            </select>
-          </label>
+          <div class="toolbar-actions">
+            <button class="text-button" id="seeAll" type="button">Reset view <span aria-hidden="true">-></span></button>
+            <label class="sort-field" for="sortSelect">
+              <span>Sort</span>
+              <select id="sortSelect">
+                <option value="recommended">Recommended</option>
+                <option value="soonest">Soonest</option>
+                <option value="distance">Nearest</option>
+                <option value="price">Lowest price</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <div class="results-meta" id="resultsMeta" aria-live="polite"></div>

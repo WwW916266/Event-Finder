@@ -1,6 +1,7 @@
 {
   "scripts": {
     "build": "node build-config.js",
+    "refresh-events": "node import-all-events.js",
     "start": "node server.js"
   },
   "dependencies": {},
