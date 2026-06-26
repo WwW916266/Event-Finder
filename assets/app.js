@@ -222,18 +222,19 @@ const MARKETS = {
 const MARKET_STORAGE_KEY = "nearo.market";
 const DEFAULT_MARKET_ID = "singapore";
 const MAP_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#20483c" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#d8e7df" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#18362d" }] },
-  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#48705f" }] },
-  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#285647" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d9f06d" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#356858" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#18362d" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#c7d7cf" }] },
-  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2b5b4d" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#163029" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#78958a" }] },
+  { elementType: "geometry", stylers: [{ color: "#f3e5d3" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#7f6758" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#fff8ef" }] },
+  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#d7bca5" }] },
+  { featureType: "landscape.man_made", elementType: "geometry", stylers: [{ color: "#f7eadb" }] },
+  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#ead9c4" }] },
+  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#a77462" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#fff6ea" }] },
+  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#ead0b7" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#967765" }] },
+  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#e8d2bd" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#b9d8d2" }] },
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#6f948c" }] },
 ];
 const FALLBACK_IMAGES = {
   Art: "https://images.unsplash.com/photo-1507924538820-ede94a04019d?auto=format&fit=crop&w=1000&q=85",
@@ -251,7 +252,6 @@ let saved = new Set(readSaved());
 let activeCategory = "All";
 let activeMapId = events[0].id;
 let googleMap;
-let infoWindow;
 let googleMarkers = new Map();
 let googleClusterMarkers = [];
 let lastFilteredEvents = [];
@@ -259,6 +259,7 @@ let currentPage = 1;
 let aiRecommendationActive = false;
 let aiRecommendedIds = [];
 let aiRecommendationSummary = "";
+let mapAreaFilterIds = [];
 let usingFallbackEvents = true;
 let supabaseClient = null;
 let currentUser = null;
@@ -272,10 +273,13 @@ const emptyState = document.querySelector("#emptyState");
 const emptyAiButton = document.querySelector("#emptyAiButton");
 const planCount = document.querySelector("#planCount");
 const searchInput = document.querySelector("#searchInput");
+const searchForm = document.querySelector("#searchForm");
 const dateSelect = document.querySelector("#dateSelect");
 const sortSelect = document.querySelector("#sortSelect");
 const resultsMeta = document.querySelector("#resultsMeta");
 const pagination = document.querySelector("#pagination");
+const experienceShell = document.querySelector("#experienceShell");
+const viewLinks = document.querySelectorAll("[data-view-link]");
 const aiGuideForm = document.querySelector("#aiGuideForm");
 const aiGuide = document.querySelector("#aiGuide");
 const aiToggles = document.querySelectorAll("#aiToggle, #aiFloatingToggle");
@@ -286,7 +290,6 @@ const aiResults = document.querySelector("#aiResults");
 const googleMapEl = document.querySelector("#googleMap");
 const mapFallback = document.querySelector("#mapFallback");
 const mapPanel = document.querySelector(".map-panel");
-const mapPreview = document.querySelector("#mapPreview");
 const cityStats = document.querySelector("#cityStats");
 const eventDialog = document.querySelector("#eventDialog");
 const dialogContent = document.querySelector("#dialogContent");
@@ -393,13 +396,17 @@ function getFilteredEvents(options = {}) {
   const query = searchInput.value.trim().toLowerCase();
   const date = dateSelect?.value || "Anytime";
   const sort = sortSelect.value;
+  const mapAreaIds = !options.ignoreMapArea && mapAreaFilterIds.length
+    ? new Set(mapAreaFilterIds.map(String))
+    : null;
 
   const filtered = events.filter((event) => {
     const matchesMarket = (event.marketId || DEFAULT_MARKET_ID) === activeMarket.id;
+    const matchesArea = !mapAreaIds || mapAreaIds.has(String(event.id));
     const matchesCategory = activeCategory === "All" || event.category === activeCategory;
     const matchesDate = date === "Anytime" || event.dateGroup === date;
     const haystack = `${event.title} ${event.category} ${event.place} ${event.description}`.toLowerCase();
-    return matchesMarket && matchesCategory && matchesDate && haystack.includes(query);
+    return matchesMarket && matchesArea && matchesCategory && matchesDate && haystack.includes(query);
   });
 
   return filtered.sort((a, b) => {
@@ -627,7 +634,7 @@ function renderAiRecommendations(result) {
         <h4>${event.title}</h4>
         <p>${pick.reason || "A good fit for your request."}</p>
         <div>${event.time} · ${event.place}</div>
-        <button type="button" data-details="${event.id}">View details</button>
+        <button class="btn-secondary" type="button" data-details="${event.id}">View details</button>
       </article>`;
     })
     .filter(Boolean)
@@ -639,7 +646,7 @@ function renderAiRecommendations(result) {
   `;
 
   if (pickedIds.length) {
-    document.querySelector(".content-section").scrollIntoView({ behavior: "smooth", block: "start" });
+    experienceShell.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 }
 
@@ -732,7 +739,7 @@ function updateAuthUi(user) {
   authSubtitle.textContent = isLoggedIn && !authFormForced
     ? "Your Nearo account is active on this device."
     : authMode === "login"
-      ? "Log in to keep your Nearo account ready."
+      ? "Welcome back. Let's find your next experience."
       : "Register with email and password.";
 }
 
@@ -746,7 +753,7 @@ function setAuthMode(mode) {
   authSubtitle.textContent = currentUser && !authFormForced
     ? "Your Nearo account is active on this device."
     : mode === "login"
-      ? "Log in to keep your Nearo account ready."
+      ? "Welcome back. Let's find your next experience."
       : "Register with email and password.";
   authSubmit.textContent = mode === "login" ? "Login" : "Create account";
   authNote.textContent = mode === "login" ? "Use the email and password you registered with." : "Password should be at least 6 characters.";
@@ -952,27 +959,28 @@ function render() {
   if (filtered.length) emptyAiButton.hidden = true;
   if (!filtered.length) {
     const query = searchInput.value.trim();
-    emptyState.querySelector("h3").textContent = aiRecommendationActive ? "No AI picks yet" : "No events found";
+    emptyState.querySelector("h3").textContent = aiRecommendationActive ? "No AI picks yet" : "No experiences found";
     emptyState.querySelector("p").textContent = aiRecommendationActive
       ? "Try asking for a broader mood, date, or budget."
       : query
-        ? `No exact match for "${query}". Want AI to recommend something close?`
-        : "Try another search, date, or category.";
+        ? `No exact match for "${query}". Want AI to shape a few close ideas?`
+        : "Try a different mood, date, or category.";
     emptyAiButton.hidden = aiRecommendationActive || !query;
   }
   planCount.textContent = saved.size;
 
   if (aiRecommendationActive) {
-    const noun = filtered.length === 1 ? "event" : "events";
-    const pageText = filtered.length ? `Showing ${pageStart + 1}-${pageStart + pageEvents.length} of ` : "";
-    resultsMeta.textContent = `${pageText}${filtered.length} AI recommended ${noun}${aiRecommendationSummary ? ` · ${aiRecommendationSummary}` : ""}`;
+    const noun = filtered.length === 1 ? "experience" : "experiences";
+    const pageText = filtered.length ? `${pageStart + 1}-${pageStart + pageEvents.length} of ` : "";
+    resultsMeta.textContent = `${pageText}${filtered.length} AI-curated ${noun}${aiRecommendationSummary ? ` · ${aiRecommendationSummary}` : ""}`;
+  } else if (mapAreaFilterIds.length) {
+    const noun = filtered.length === 1 ? "experience" : "experiences";
+    resultsMeta.textContent = `${filtered.length} ${noun} in this area`;
   } else {
-    const noun = filtered.length === 1 ? "event" : "events";
-    const pageText = filtered.length ? `Showing ${pageStart + 1}-${pageStart + pageEvents.length} of ` : "";
     const queryText = searchInput.value.trim() ? ` for "${searchInput.value.trim()}"` : "";
     resultsMeta.textContent = usingFallbackEvents
-      ? `${pageText}${filtered.length} demo ${noun}${queryText}`
-      : `${pageText}${filtered.length} official ${noun}${queryText}`;
+      ? `${filtered.length} demo experiences${queryText}`
+      : `${filtered.length} nearby experiences${queryText}`;
   }
 
   renderSaved();
@@ -988,6 +996,7 @@ function switchMarket(marketId) {
   activeMarket = MARKETS[activeMarketId];
   writeMarketId(activeMarketId);
   clearAiRecommendations();
+  clearMapAreaFilterState();
   activeCategory = "All";
   searchInput.value = "";
   if (dateSelect) dateSelect.value = "Anytime";
@@ -1054,6 +1063,104 @@ function clearAiRecommendations() {
   aiRecommendationSummary = "";
 }
 
+function clearMapAreaFilterState() {
+  mapAreaFilterIds = [];
+}
+
+function clearMapAreaFilter(options = {}) {
+  if (!mapAreaFilterIds.length) return;
+  clearMapAreaFilterState();
+  resetPagination();
+  render();
+  if (options.toast) toast("Showing all nearby experiences");
+}
+
+function focusFeedCard(id, options = {}) {
+  const card = [...document.querySelectorAll(".event-card[data-card]")]
+    .find((item) => String(item.dataset.card) === String(id));
+  if (!card) return false;
+
+  card.scrollIntoView({ behavior: "smooth", block: options.block || "nearest" });
+  card.classList.add("pulse");
+  window.setTimeout(() => card.classList.remove("pulse"), 2000);
+  return true;
+}
+
+function showPageForEvent(id) {
+  const filtered = getFilteredEvents();
+  const index = filtered.findIndex((event) => String(event.id) === String(id));
+  if (index < 0) return false;
+
+  currentPage = Math.floor(index / EVENTS_PER_PAGE) + 1;
+  return true;
+}
+
+function selectMapEvent(id) {
+  clearMapAreaFilterState();
+  activeMapId = id;
+  if (!showPageForEvent(id)) resetPagination();
+  render();
+  highlightActiveMarker();
+  highlightCard(id);
+
+  window.setTimeout(() => {
+    if (!focusFeedCard(id, { block: "nearest" })) focusFeedCard(id, { block: "start" });
+  }, 80);
+}
+
+function selectMapCluster(clusterEvents) {
+  const baseIds = new Set(getFilteredEvents({ ignoreMapArea: true }).map((event) => String(event.id)));
+  const ids = clusterEvents
+    .map((event) => String(event.id))
+    .filter((id) => baseIds.has(id));
+  if (!ids.length) return;
+
+  mapAreaFilterIds = ids;
+  activeMapId = ids[0];
+  resetPagination();
+  render();
+  highlightActiveMarker();
+  highlightCard(activeMapId);
+
+  window.setTimeout(() => focusFeedCard(activeMapId, { block: "nearest" }), 90);
+}
+
+function setExperienceView(view = "discover", options = {}) {
+  const mode = view === "map" ? "map" : "discover";
+  experienceShell.dataset.view = mode;
+  viewLinks.forEach((link) => link.classList.toggle("active", link.dataset.viewLink === mode));
+
+  if (mode === "map") {
+    window.setTimeout(() => {
+      if (googleMap && window.google) {
+        google.maps.event.trigger(googleMap, "resize");
+        googleMap.setCenter(activeMarket.center);
+      }
+    }, 520);
+  }
+
+  if (options.scroll !== false) {
+    const target = mode === "map" ? document.querySelector("#city-map") : experienceShell;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function runSearchPrompt(prompt) {
+  const query = String(prompt || "").trim();
+  if (!query) return;
+
+  searchInput.value = query;
+  aiPrompt.value = query;
+  clearAiRecommendations();
+  clearMapAreaFilterState();
+  resetPagination();
+  render();
+  searchInput.blur();
+  searchForm.classList.remove("search-popover-open");
+  experienceShell.scrollIntoView({ behavior: "smooth", block: "start" });
+  runAiGuide(query);
+}
+
 function renderSaved() {
   const chosen = events.filter((event) => (event.marketId || DEFAULT_MARKET_ID) === activeMarket.id && saved.has(String(event.id)));
   const container = document.querySelector("#savedEvents");
@@ -1079,7 +1186,7 @@ function renderStats(filtered) {
   const sourceCount = new Set(filtered.map((event) => event.availability).filter(Boolean)).size;
 
   cityStats.innerHTML = `
-    <div class="stat"><strong>${filtered.length}</strong><span>matching events</span></div>
+    <div class="stat"><strong>${filtered.length}</strong><span>curated experiences available</span></div>
     <div class="stat"><strong>${freeCount}</strong><span>free to join</span></div>
     <div class="stat"><strong>${sourceCount}</strong><span>official sources</span></div>
     <div class="stat"><strong>${saved.size}</strong><span>saved plans</span></div>
@@ -1093,7 +1200,6 @@ function renderMap(filtered) {
   const mapEvents = mapLayerEvents(filtered);
   renderFallbackMap(mapEvents, visibleIds);
   updateGoogleMarkers(mapEvents, visibleIds);
-  renderMapPreview(events.find((event) => String(event.id) === String(activeMapId)) || filtered[0]);
 }
 
 function mapLayerEvents(filtered) {
@@ -1112,7 +1218,7 @@ function renderFallbackMap(mapEvents, visibleIds) {
   const clusters = clusterFallbackEvents(mapEvents);
   mapFallback.innerHTML = roads.map((road) => `<span class="map-road" style="left: ${road.left}%; top: ${road.top}%; width: ${road.width}%; transform: rotate(${road.rotate}deg);"></span>`).join("") +
     clusters.map((cluster) => cluster.events.length > 1
-      ? `<button class="event-cluster ${cluster.events.some((event) => String(event.id) === String(activeMapId)) ? "active" : ""} ${cluster.events.some((event) => visibleIds.has(String(event.id))) ? "" : "dimmed"}" type="button" data-pin="${cluster.events.find((event) => visibleIds.has(String(event.id)))?.id || cluster.events[0].id}" style="left: ${cluster.x}%; top: ${cluster.y}%;" aria-label="Preview ${cluster.events.length} nearby events">
+      ? `<button class="event-cluster ${cluster.events.some((event) => String(event.id) === String(activeMapId)) ? "active" : ""} ${cluster.events.some((event) => visibleIds.has(String(event.id))) ? "" : "dimmed"}" type="button" data-pin="${cluster.events.find((event) => visibleIds.has(String(event.id)))?.id || cluster.events[0].id}" data-cluster-ids="${cluster.events.map((event) => event.id).join(",")}" style="left: ${cluster.x}%; top: ${cluster.y}%;" aria-label="Show ${cluster.events.length} experiences in this area">
           <span>+${cluster.events.length}</span>
         </button>`
       : cluster.events.map((event) => `<button class="event-pin ${String(event.id) === String(activeMapId) ? "active" : ""} ${visibleIds.has(String(event.id)) ? "" : "dimmed"}" type="button" data-pin="${event.id}" style="left: ${event.map.x}%; top: ${event.map.y}%;" aria-label="Preview ${event.title}">
@@ -1156,8 +1262,9 @@ function initGoogleMap() {
     const filtered = lastFilteredEvents.length ? lastFilteredEvents : getFilteredEvents();
     updateGoogleMarkers(mapLayerEvents(filtered), new Set(filtered.map((event) => String(event.id))), { fitBounds: false });
   });
+  googleMap.addListener("click", () => clearMapAreaFilter());
+  googleMap.addListener("dragstart", () => clearMapAreaFilter());
 
-  infoWindow = new google.maps.InfoWindow();
   mapPanel.classList.add("maps-ready");
   mapPanel.classList.remove("maps-failed");
   const filtered = lastFilteredEvents.length ? lastFilteredEvents : getFilteredEvents();
@@ -1194,12 +1301,7 @@ function updateGoogleMarkers(mapEvents, visibleIds = new Set(mapEvents.map((even
         icon,
       });
       marker.addListener("click", () => {
-        activeMapId = event.id;
-        renderMapPreview(event);
-        highlightActiveMarker();
-        highlightCard(event.id);
-        infoWindow.setContent(infoWindowHtml(event));
-        infoWindow.open({ map: googleMap, anchor: marker });
+        selectMapEvent(event.id);
       });
       googleMarkers.set(event.id, marker);
     } else {
@@ -1217,13 +1319,7 @@ function updateGoogleMarkers(mapEvents, visibleIds = new Set(mapEvents.map((even
       zIndex: 10,
     });
     marker.addListener("click", () => {
-      const event = cluster.events.find((item) => visibleIds.has(String(item.id))) || cluster.events[0];
-      activeMapId = event.id;
-      renderMapPreview(event);
-      highlightActiveMarker();
-      highlightCard(event.id);
-      infoWindow.setContent(infoWindowHtml(event));
-      infoWindow.open({ map: googleMap, anchor: marker });
+      selectMapCluster(cluster.events);
     });
     googleClusterMarkers.push(marker);
   });
@@ -1261,8 +1357,8 @@ function clusterGoogleEvents(mapEvents) {
 }
 
 function markerIcon(active, focused = true) {
-  const fill = active ? "#ff5b45" : "#d9f06d";
-  const stroke = active ? "#ffffff" : "#17231f";
+  const fill = active ? "#ff715d" : "#b9d8d2";
+  const stroke = active ? "#fff8ef" : "#7e5b48";
 
   return {
     path: "M12 2C7.03 2 3 5.83 3 10.55c0 6.25 9 11.45 9 11.45s9-5.2 9-11.45C21 5.83 16.97 2 12 2zm0 11.7a3.15 3.15 0 1 1 0-6.3 3.15 3.15 0 0 1 0 6.3z",
@@ -1277,9 +1373,9 @@ function markerIcon(active, focused = true) {
 }
 
 function clusterIcon(count, focused = true) {
-  const fill = focused ? "#17231f" : "#8d9a94";
+  const fill = focused ? "#7e5b48" : "#c9b4a1";
   const text = `+${count}`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="54" height="54" viewBox="0 0 54 54"><circle cx="27" cy="27" r="22" fill="${fill}" fill-opacity="${focused ? "0.96" : "0.35"}" stroke="white" stroke-width="3"/><text x="27" y="32" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="white">${text}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="54" height="54" viewBox="0 0 54 54"><circle cx="27" cy="27" r="22" fill="${fill}" fill-opacity="${focused ? "0.96" : "0.42"}" stroke="#fff8ef" stroke-width="3"/><text x="27" y="32" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="#fff8ef">${text}</text></svg>`;
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
     scaledSize: new google.maps.Size(54, 54),
@@ -1309,40 +1405,8 @@ function highlightCard(id) {
   });
 }
 
-function infoWindowHtml(event) {
-  return `<div style="max-width:250px;color:#17231f;font-family:DM Sans,Arial,sans-serif;padding:2px 0;">
-    <span style="display:block;margin-bottom:5px;color:#ff5b45;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;">${event.category}</span>
-    <strong style="display:block;margin-bottom:8px;font-size:15px;line-height:1.25;">${event.title}</strong>
-    <span style="display:flex;gap:7px;margin-bottom:5px;color:#68746f;font-size:12px;line-height:1.35;"><span aria-hidden="true">↗</span>${event.time}</span>
-    <span style="display:flex;gap:7px;color:#68746f;font-size:12px;line-height:1.35;"><span aria-hidden="true">⌖</span>${event.place}</span>
-  </div>`;
-}
-
 function handleGoogleMapError() {
   mapPanel.classList.add("maps-failed");
-}
-
-function renderMapPreview(event) {
-  if (!event) {
-    mapPreview.innerHTML = `<h3>No events on this view</h3><p>Try resetting the filters to bring the city back.</p>`;
-    return;
-  }
-
-  const isSaved = saved.has(String(event.id));
-  mapPreview.innerHTML = `
-    <span class="card-tag">${event.category}</span>
-    <h3>${event.title}</h3>
-    <div class="preview-meta"><span aria-hidden="true">↗</span><span>${event.time}</span></div>
-    <div class="preview-meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
-    <div class="preview-price">${event.price}</div>
-    <div class="preview-actions">
-      <button class="preview-details" type="button" data-details="${event.id}">View details</button>
-      <button class="preview-icon ${isSaved ? "saved" : ""}" type="button" data-save="${event.id}" aria-label="${isSaved ? "Remove from" : "Save to"} plans">${isSaved ? "♥" : "♡"}</button>
-      <button class="preview-icon" type="button" data-calendar="${event.id}" aria-label="Add to calendar">
-        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"></path></svg>
-      </button>
-    </div>
-  `;
 }
 
 function calendarUrl(event) {
@@ -1461,10 +1525,10 @@ function openDetails(id) {
       <div class="meta"><span aria-hidden="true">↗</span><span>${event.time}</span></div>
       <div class="meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
       <div class="dialog-actions">
-        <button class="dialog-save" type="button" data-save="${event.id}">${isSaved ? "Remove from plans" : "Save to plans"}</button>
-        <button class="dialog-calendar" type="button" data-calendar="${event.id}">Add calendar</button>
-        <a href="${eventLink}" target="_blank" rel="noreferrer">${eventLinkText}</a>
-        <button class="dialog-close" type="button" data-close-dialog>Close</button>
+        <button class="dialog-save btn-primary" type="button" data-save="${event.id}">${isSaved ? "Remove from plans" : "Save to plans"}</button>
+        <button class="dialog-calendar btn-secondary" type="button" data-calendar="${event.id}">Add calendar</button>
+        <a class="btn-secondary" href="${eventLink}" target="_blank" rel="noreferrer">${eventLinkText}</a>
+        <button class="dialog-close btn-tertiary" type="button" data-close-dialog>Close</button>
       </div>
     </div>
   `;
@@ -1474,10 +1538,11 @@ function openDetails(id) {
 
 function setActiveMap(id) {
   activeMapId = id;
+  setExperienceView("map", { scroll: false });
   render();
   highlightActiveMarker();
   highlightCard(id);
-  document.querySelector("#city-map").scrollIntoView({ behavior: "smooth", block: "start" });
+  experienceShell.scrollIntoView({ behavior: "smooth", block: "start" });
 
   window.setTimeout(() => {
     document.querySelector(`[data-pin="${id}"]`)?.focus();
@@ -1530,6 +1595,7 @@ document.addEventListener("click", (event) => {
   const filterButton = event.target.closest(".filter");
   if (filterButton) {
     clearAiRecommendations();
+    clearMapAreaFilterState();
     activeCategory = filterButton.dataset.category;
     resetPagination();
     document.querySelectorAll(".filter").forEach((button) => button.classList.toggle("active", button === filterButton));
@@ -1537,13 +1603,27 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const promptButton = event.target.closest("[data-ai-prompt]");
+  if (promptButton) {
+    runSearchPrompt(promptButton.dataset.aiPrompt);
+    return;
+  }
+
+  const viewLink = event.target.closest("[data-view-link]");
+  if (viewLink) {
+    event.preventDefault();
+    setExperienceView(viewLink.dataset.viewLink);
+    return;
+  }
+
   const popularButton = event.target.closest("[data-query]");
   if (popularButton) {
     clearAiRecommendations();
+    clearMapAreaFilterState();
     searchInput.value = popularButton.dataset.query;
     resetPagination();
     render();
-    document.querySelector(".content-section").scrollIntoView({ behavior: "smooth" });
+    experienceShell.scrollIntoView({ behavior: "smooth" });
     return;
   }
 
@@ -1551,7 +1631,7 @@ document.addEventListener("click", (event) => {
   if (pageButton) {
     currentPage = Number(pageButton.dataset.page);
     render();
-    document.querySelector(".content-section").scrollIntoView({ behavior: "smooth", block: "start" });
+    experienceShell.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
 
@@ -1575,10 +1655,12 @@ document.addEventListener("click", (event) => {
 
   const pin = event.target.closest("[data-pin]");
   if (pin) {
-    activeMapId = pin.dataset.pin;
-    render();
-    highlightActiveMarker();
-    highlightCard(activeMapId);
+    const clusterIds = pin.dataset.clusterIds?.split(",").filter(Boolean);
+    if (clusterIds?.length > 1) {
+      selectMapCluster(events.filter((event) => clusterIds.includes(String(event.id))));
+    } else {
+      selectMapEvent(pin.dataset.pin);
+    }
     return;
   }
 
@@ -1591,26 +1673,63 @@ document.addEventListener("click", (event) => {
   }
 });
 
-document.querySelector("#searchForm").addEventListener("submit", (event) => {
+mapFallback?.addEventListener("click", (event) => {
+  if (event.target.closest("[data-pin]")) return;
+  clearMapAreaFilter();
+});
+
+grid.addEventListener("pointerover", (event) => {
+  const card = event.target.closest(".event-card[data-card]");
+  if (!card) return;
+
+  activeMapId = card.dataset.card;
+  highlightActiveMarker();
+  highlightCard(activeMapId);
+});
+
+grid.addEventListener("focusin", (event) => {
+  const card = event.target.closest(".event-card[data-card]");
+  if (!card) return;
+
+  activeMapId = card.dataset.card;
+  highlightActiveMarker();
+  highlightCard(activeMapId);
+});
+
+searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
   resetPagination();
   clearAiRecommendations();
+  clearMapAreaFilterState();
   render();
-  document.querySelector(".content-section").scrollIntoView({ behavior: "smooth" });
+  searchForm.classList.remove("search-popover-open");
+  experienceShell.scrollIntoView({ behavior: "smooth" });
 });
 
 searchInput.addEventListener("input", () => {
   clearAiRecommendations();
+  clearMapAreaFilterState();
   resetPagination();
   render();
 });
+searchInput.addEventListener("focus", () => {
+  searchForm.classList.add("search-popover-open");
+});
+document.addEventListener("focusin", (event) => {
+  if (!searchForm.contains(event.target)) searchForm.classList.remove("search-popover-open");
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!searchForm.contains(event.target)) searchForm.classList.remove("search-popover-open");
+});
 dateSelect?.addEventListener("change", () => {
   clearAiRecommendations();
+  clearMapAreaFilterState();
   resetPagination();
   render();
 });
 sortSelect.addEventListener("change", () => {
   clearAiRecommendations();
+  clearMapAreaFilterState();
   resetPagination();
   render();
 });
@@ -1670,6 +1789,7 @@ document.querySelector("#sharePlans").addEventListener("click", async () => {
 
 document.querySelector("#seeAll").addEventListener("click", () => {
   clearAiRecommendations();
+  clearMapAreaFilterState();
   activeCategory = "All";
   searchInput.value = "";
   if (dateSelect) dateSelect.value = "Anytime";

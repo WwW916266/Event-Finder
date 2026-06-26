@@ -18,8 +18,8 @@
       </a>
 
       <nav class="primary-nav" aria-label="Primary navigation">
-        <a class="active" href="#discover">Discover</a>
-        <a href="#city-map">Map</a>
+        <a class="active" href="#discover" data-view-link="discover">Discover</a>
+        <a href="#city-map" data-view-link="map">Map</a>
         <button class="nav-button" id="plansNav" type="button">
           My plans <span class="count" id="planCount">0</span>
         </button>
@@ -53,12 +53,21 @@
             <input id="searchInput" type="search" placeholder="Search events, artists, venues, weekends..." autocomplete="off" />
           </label>
 
-          <button class="search-button" type="submit" aria-label="Explore events">
+          <button class="search-button btn-primary" type="submit" aria-label="Explore events">
             <svg aria-hidden="true" viewBox="0 0 24 24">
               <circle cx="11" cy="11" r="6"></circle>
               <path d="m16 16 4 4"></path>
             </svg>
           </button>
+
+          <div class="search-popover" id="searchPopover" aria-label="AI search ideas">
+            <p>✨ AI Curated Prompts For You</p>
+            <div class="prompt-chips">
+              <button type="button" data-ai-prompt="Plan a romantic jazz night this Saturday under $50">Plan a romantic jazz night this Saturday under $50</button>
+              <button type="button" data-ai-prompt="Kid-friendly pottery workshops happening tomorrow">Kid-friendly pottery workshops happening tomorrow</button>
+              <button type="button" data-ai-prompt="Find secret outdoor food pop-ups in the city">Find secret outdoor food pop-ups in the city</button>
+            </div>
+          </div>
         </form>
 
         <div class="quick-row" aria-label="Popular searches">
@@ -89,7 +98,7 @@
           </div>
 
           <div class="toolbar-actions">
-            <button class="text-button" id="seeAll" type="button">Reset view <span aria-hidden="true">-></span></button>
+            <button class="text-button btn-tertiary" id="seeAll" type="button">Reset view <span aria-hidden="true">-></span></button>
             <label class="sort-field" for="sortSelect">
               <span>Sort</span>
               <select id="sortSelect">
@@ -102,30 +111,33 @@
           </div>
         </div>
 
-        <div class="results-meta" id="resultsMeta" aria-live="polite"></div>
-        <div class="event-grid" id="eventGrid"></div>
-        <nav class="pagination" id="pagination" aria-label="Event pages"></nav>
-        <div class="empty-state" id="emptyState" hidden>
-          <span aria-hidden="true">No results</span>
-          <h3>No events found</h3>
-          <p>Try another search, date, or category.</p>
-          <button class="empty-ai-button" id="emptyAiButton" type="button">Ask AI for recommendations</button>
-        </div>
-      </section>
-
-      <section class="city-section" id="city-map" aria-labelledby="mapTitle">
-        <div class="city-copy">
-          <p class="kicker light">Happening around you</p>
-          <h2 id="mapTitle">Singapore at a glance.</h2>
-          <p id="mapCopy">Tap a pin to preview an event, then save it to your weekend without leaving the map.</p>
-          <div class="stats" id="cityStats"></div>
-        </div>
-
-        <div class="map-panel">
-          <div class="google-map" id="googleMap" aria-label="Google map of nearby events">
-            <div class="map-fallback" id="mapFallback" aria-hidden="true"></div>
+        <div class="experience-shell" id="experienceShell" data-view="discover">
+          <div class="results-pane">
+            <div class="feed-status" id="resultsMeta" aria-live="polite"></div>
+            <div class="event-grid" id="eventGrid"></div>
+            <nav class="pagination" id="pagination" aria-label="Event pages"></nav>
+            <div class="empty-state" id="emptyState" hidden>
+              <span aria-hidden="true">No results</span>
+              <h3>No experiences found</h3>
+              <p>Try a different mood, date, or category.</p>
+              <button class="empty-ai-button btn-primary" id="emptyAiButton" type="button">Ask AI for recommendations</button>
+            </div>
           </div>
-          <div class="map-preview" id="mapPreview" aria-live="polite"></div>
+
+          <section class="city-section map-pane" id="city-map" aria-labelledby="mapTitle">
+            <div class="city-copy">
+              <p class="kicker light">Happening around you</p>
+              <h2 id="mapTitle">Singapore at a glance.</h2>
+              <p id="mapCopy">Tap a pin to preview an event, then save it to your weekend without leaving the map.</p>
+              <div class="stats" id="cityStats"></div>
+            </div>
+
+            <div class="map-panel">
+              <div class="google-map" id="googleMap" aria-label="Google map of nearby events">
+                <div class="map-fallback" id="mapFallback" aria-hidden="true"></div>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
     </main>
@@ -141,7 +153,7 @@
       <div id="savedEvents" class="saved-events"></div>
       <div class="drawer-footer">
         <p><strong>Make it a group thing.</strong><br />Share your plan list in one tap.</p>
-        <button id="sharePlans" type="button">Share weekend</button>
+        <button class="btn-secondary" id="sharePlans" type="button">Share weekend</button>
       </div>
     </aside>
 
@@ -156,15 +168,15 @@
         <div class="auth-copy">
           <p class="kicker">Your account</p>
           <h2 id="authTitle">Welcome back.</h2>
-          <p id="authSubtitle">Log in to keep your Nearo account ready.</p>
+          <p id="authSubtitle">Welcome back. Let's find your next experience.</p>
         </div>
 
         <div class="auth-session" id="authSession" hidden>
           <span>Signed in as</span>
           <strong id="authUserEmail"></strong>
           <div class="auth-session-actions">
-            <button id="switchAccountButton" type="button">Switch account</button>
-            <button id="signOutButton" type="button">Sign out</button>
+            <button class="btn-tertiary" id="switchAccountButton" type="button">Switch account</button>
+            <button class="btn-secondary" id="signOutButton" type="button">Sign out</button>
           </div>
         </div>
 
@@ -184,7 +196,7 @@
             <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required />
           </label>
 
-          <button class="auth-submit" id="authSubmit" type="submit">Login</button>
+          <button class="auth-submit btn-primary" id="authSubmit" type="submit">Login</button>
           <p class="auth-note" id="authNote">Use the email and password you registered with.</p>
         </form>
       </div>
@@ -206,7 +218,7 @@
             <span>What are you looking for?</span>
             <textarea id="aiPrompt" rows="3" placeholder="Example: romantic concerts this weekend under S$80"></textarea>
           </label>
-          <button id="aiGuideButton" type="submit">Ask AI</button>
+          <button class="btn-primary" id="aiGuideButton" type="submit">Ask AI</button>
         </form>
         <div class="ai-results" id="aiResults" aria-live="polite"></div>
       </div>
