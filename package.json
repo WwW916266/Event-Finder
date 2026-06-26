@@ -1,7 +1,8 @@
 {
   "scripts": {
-    "build": "node build-config.js",
-    "refresh-events": "node import-all-events.js",
+    "build": "node scripts/build-config.js",
+    "import-casual": "node scripts/import-eventbrite-casual.js",
+    "refresh-events": "node scripts/import-all-events.js",
     "start": "node server.js"
   },
   "dependencies": {},

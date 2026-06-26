@@ -1,7 +1,7 @@
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
-const { getGeminiRecommendations } = require("./gemini-guide-core");
+const { getGeminiRecommendations } = require("./lib/gemini-guide-core");
 
 const port = process.env.PORT || 3000;
 const root = __dirname;

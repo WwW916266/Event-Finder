@@ -327,7 +327,7 @@ function getFilteredEvents(options = {}) {
   return filtered.sort((a, b) => {
     if (sort === "soonest") return new Date(a.sortDate) - new Date(b.sortDate);
     if (sort === "distance") return a.distance - b.distance;
-    if (sort === "price") return a.priceValue - b.priceValue;
+    if (sort === "price") return (a.priceValue ?? Number.MAX_SAFE_INTEGER) - (b.priceValue ?? Number.MAX_SAFE_INTEGER);
     return a.id - b.id;
   });
 }
@@ -721,8 +721,8 @@ function normalizeSupabaseEvent(row) {
     lat: Number(venue.latitude || SINGAPORE_CENTER.lat),
     lng: Number(venue.longitude || SINGAPORE_CENTER.lng),
   };
-  const priceMin = Number(row.price_min || 0);
-  const priceMax = Number(row.price_max || priceMin);
+  const priceMin = numberOrNull(row.price_min);
+  const priceMax = numberOrNull(row.price_max) ?? priceMin;
 
   const category = row.category || "Event";
   const source = sourceLabel(row.event_sources?.name);
@@ -788,9 +788,16 @@ function formatEventTime(date) {
 }
 
 function formatPrice(min, max, currency) {
-  if (!min && !max) return "Free";
+  if (min === null && max === null) return "See tickets";
+  if (min === 0 && max === 0) return "Free";
   const symbol = currency === "SGD" ? "S$" : `${currency} `;
   return min === max ? `${symbol}${min}` : `${symbol}${min}-${max}`;
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function sourceLabel(sourceName) {

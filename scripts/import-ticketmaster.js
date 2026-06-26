@@ -112,7 +112,7 @@ async function upsertVenue(venue) {
 }
 
 async function upsertEvent(item, venue, source) {
-  const price = item.priceRanges?.[0] || {};
+  const price = ticketmasterPrice(item);
   const image = bestImage(item.images);
   const startsAt = eventStart(item);
   const endsAt = startsAt ? new Date(new Date(startsAt).getTime() + 2 * 60 * 60 * 1000).toISOString() : null;
@@ -130,8 +130,8 @@ async function upsertEvent(item, venue, source) {
       image_url: image?.url || null,
       official_url: item.url,
       ticket_url: item.url,
-      price_min: price.min || null,
-      price_max: price.max || null,
+      price_min: price.min,
+      price_max: price.max,
       currency: price.currency || "SGD",
       source_id: source.id,
       source_event_id: item.id,
@@ -158,6 +158,25 @@ function bestImage(images = []) {
   return [...images].sort((a, b) => (b.width || 0) - (a.width || 0))[0];
 }
 
+function ticketmasterPrice(item) {
+  const ranges = (item.priceRanges || [])
+    .map((range) => ({
+      min: numberOrNull(range.min),
+      max: numberOrNull(range.max),
+      currency: range.currency || "SGD",
+    }))
+    .filter((range) => range.min !== null || range.max !== null);
+
+  if (!ranges.length) return { min: null, max: null, currency: "SGD" };
+
+  const values = ranges.flatMap((range) => [range.min, range.max]).filter((value) => value !== null);
+  return {
+    min: Math.min(...values),
+    max: Math.max(...values),
+    currency: ranges.find((range) => range.currency)?.currency || "SGD",
+  };
+}
+
 function categoryFor(item) {
   const segment = item.classifications?.[0]?.segment?.name;
   if (segment === "Music") return "Concert";
@@ -171,6 +190,12 @@ function decodeHtml(value = "") {
     .replace(/&quot;/g, '"')
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 async function supabaseFetch(path, options) {

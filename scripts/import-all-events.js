@@ -5,18 +5,23 @@ const vm = require("vm");
 const importers = [
   {
     name: "Ticketmaster",
-    file: "import-ticketmaster.js",
+    file: "scripts/import-ticketmaster.js",
     keys: ["SUPABASE_URL", "TICKETMASTER_CONSUMER_KEY"],
   },
   {
     name: "SISTIC",
-    file: "import-sistic.js",
+    file: "scripts/import-sistic.js",
     keys: ["SUPABASE_URL"],
   },
   {
     name: "Eventbrite",
-    file: "import-eventbrite.js",
+    file: "scripts/import-eventbrite.js",
     keys: ["SUPABASE_URL", "EVENTBRITE_PRIVATE_TOKEN"],
+  },
+  {
+    name: "Eventbrite Casual",
+    file: "scripts/import-eventbrite-casual.js",
+    keys: ["SUPABASE_URL"],
   },
 ];
 

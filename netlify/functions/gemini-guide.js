@@ -1,4 +1,4 @@
-const { getGeminiRecommendations } = require("../../gemini-guide-core");
+const { getGeminiRecommendations } = require("../../lib/gemini-guide-core");
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {

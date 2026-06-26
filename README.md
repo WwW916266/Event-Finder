@@ -14,6 +14,7 @@ Nearo is a mobile-first local event discovery prototype for Singapore. It helps 
 - Preview events on Google Maps with a built-in fallback map
 - Load published events from Supabase
 - Import official Singapore events from Ticketmaster, SISTIC, and Eventbrite
+- Import casual Singapore activities from public Eventbrite discovery pages
 - Open event detail dialogs
 - Responsive desktop and mobile layout
 
@@ -35,7 +36,7 @@ This project is ready for Netlify hosting. The build creates a public `config.js
 2. In Netlify, choose **Add new site** -> **Import an existing project**.
 3. Connect the GitHub repository.
 4. Use these build settings:
-   - Build command: `node build-config.js`
+   - Build command: `node scripts/build-config.js`
    - Publish directory: `.`
    - Functions directory: `netlify/functions`
 5. Add these Netlify environment variables:
@@ -80,32 +81,28 @@ npm run refresh-events
 Or run one source at a time:
 
 ```text
-node import-ticketmaster.js
-node import-sistic.js
-node import-eventbrite.js
+node scripts/import-ticketmaster.js
+node scripts/import-sistic.js
+node scripts/import-eventbrite.js
+node scripts/import-eventbrite-casual.js
 ```
 
-The importers read private keys from ignored `config.js`, then upsert official event listings into Supabase without committing secrets. Eventbrite needs a local `EVENTBRITE_PRIVATE_TOKEN`; the refresh-all command skips Eventbrite until that token is added.
+The importers read private keys from ignored `config.js`, then upsert official event listings into Supabase without committing secrets. Eventbrite account-owned imports need a local `EVENTBRITE_PRIVATE_TOKEN`; casual Eventbrite discovery imports only need Supabase configured.
 
-If existing SISTIC events are missing artwork, run `node import-sistic.js` again after pulling the latest code. The importer now checks multiple SISTIC image fields and normalizes relative image URLs.
+If existing SISTIC events are missing artwork, run `node scripts/import-sistic.js` again after pulling the latest code. The importer now checks multiple SISTIC image fields and normalizes relative image URLs.
 
 ## Project files
 
 ```text
 index.html          Page content and app structure
-styles.css         Visual design and responsive layout
-app.js             Event data, filtering, saved plans, map, and interactions
-build-config.js    Generates public config.js during hosting builds
-server.js          Render-compatible Node server for the site and AI endpoint
-gemini-guide-core.js Shared private Gemini recommendation logic
-netlify.toml       Netlify hosting and security header settings
-netlify/functions  Private serverless functions, including Gemini AI guide
-package.json       Render build/start scripts
-config.example.js  Template for local Google Maps, Supabase, and importer keys
-import-all-events.js     Runs every configured event importer
-import-ticketmaster.js  Ticketmaster Singapore importer
-import-sistic.js        SISTIC Singapore importer
-import-eventbrite.js    Eventbrite Singapore activity importer
+assets/             Browser JavaScript and CSS
+scripts/            Build script and event importers
+lib/                Shared server-side Gemini logic
+server.js           Render-compatible Node server for the site and AI endpoint
+netlify.toml        Netlify hosting and security header settings
+netlify/functions   Private serverless functions, including Gemini AI guide
+package.json        Render build/start scripts
+config.example.js   Template for local Google Maps, Supabase, and importer keys
 ```
 
 ## Notes
