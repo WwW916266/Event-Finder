@@ -179,7 +179,48 @@ const GEMINI_API_KEY = window.NEARO_CONFIG?.GEMINI_API_KEY || "";
 const GEMINI_MODEL = window.NEARO_CONFIG?.GEMINI_MODEL || "gemini-flash-latest";
 const GEMINI_FALLBACK_MODELS = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-3-flash-preview", "gemini-flash-latest"]
   .filter((model, index, models) => model && models.indexOf(model) === index);
-const SINGAPORE_CENTER = { lat: 1.2931, lng: 103.852 };
+const MARKETS = {
+  singapore: {
+    id: "singapore",
+    label: "Singapore",
+    shortLabel: "SG",
+    eyebrow: "Singapore, curated",
+    lede: "Concerts, theatre, sports, workshops, and city experiences across Singapore, sorted with official event data and a little AI help.",
+    mapTitle: "Singapore at a glance.",
+    mapCopy: "Tap a pin to preview an event, then save it to your weekend without leaving the map.",
+    center: { lat: 1.2931, lng: 103.852 },
+    bounds: { minLat: 1.22, maxLat: 1.35, minLng: 103.62, maxLng: 104.04 },
+    locale: "en-SG",
+    timeZone: "Asia/Singapore",
+    currency: "SGD",
+    currencySymbol: "S$",
+    defaultPlace: "Singapore",
+    googleZoom: 12,
+    googleMinZoom: 11,
+    sourceKeywords: ["singapore", "sistic", "ticketmaster singapore", "eventbrite casual singapore"],
+  },
+  malaysia: {
+    id: "malaysia",
+    label: "Malaysia",
+    shortLabel: "MY",
+    eyebrow: "Malaysia, curated",
+    lede: "Concerts, pop-ups, workshops, food events, and city experiences across Malaysia, ready for the next wave of official sources.",
+    mapTitle: "Malaysia at a glance.",
+    mapCopy: "Switch markets, browse events, and save a weekend plan as Malaysia sources come online.",
+    center: { lat: 3.139, lng: 101.6869 },
+    bounds: { minLat: 0.8, maxLat: 7.4, minLng: 99.5, maxLng: 119.3 },
+    locale: "en-MY",
+    timeZone: "Asia/Kuala_Lumpur",
+    currency: "MYR",
+    currencySymbol: "RM",
+    defaultPlace: "Malaysia",
+    googleZoom: 11,
+    googleMinZoom: 6,
+    sourceKeywords: ["malaysia", "kuala lumpur", "ticketmaster malaysia", "eventbrite casual malaysia"],
+  },
+};
+const MARKET_STORAGE_KEY = "nearo.market";
+const DEFAULT_MARKET_ID = "singapore";
 const MAP_STYLE = [
   { elementType: "geometry", stylers: [{ color: "#20483c" }] },
   { elementType: "labels.text.fill", stylers: [{ color: "#d8e7df" }] },
@@ -205,7 +246,7 @@ const FALLBACK_IMAGES = {
   SISTIC: "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=1000&q=85",
 };
 
-let events = [...fallbackEvents];
+let events = fallbackEvents.map((event) => ({ ...event, marketId: DEFAULT_MARKET_ID }));
 let saved = new Set(readSaved());
 let activeCategory = "All";
 let activeMapId = events[0].id;
@@ -222,6 +263,9 @@ let usingFallbackEvents = true;
 let supabaseClient = null;
 let currentUser = null;
 let authMode = "login";
+let authFormForced = false;
+let activeMarketId = readMarketId();
+let activeMarket = MARKETS[activeMarketId] || MARKETS[DEFAULT_MARKET_ID];
 
 const grid = document.querySelector("#eventGrid");
 const emptyState = document.querySelector("#emptyState");
@@ -249,6 +293,11 @@ const dialogContent = document.querySelector("#dialogContent");
 const accountButton = document.querySelector("#accountButton");
 const accountAvatar = document.querySelector("#accountAvatar");
 const accountLabel = document.querySelector("#accountLabel");
+const marketSelect = document.querySelector("#marketSelect");
+const heroEyebrowText = document.querySelector("#heroEyebrowText");
+const heroLede = document.querySelector("#heroLede");
+const mapTitle = document.querySelector("#mapTitle");
+const mapCopy = document.querySelector("#mapCopy");
 const authDialog = document.querySelector("#authDialog");
 const authForm = document.querySelector("#authForm");
 const authTitle = document.querySelector("#authTitle");
@@ -258,6 +307,7 @@ const authNote = document.querySelector("#authNote");
 const authSession = document.querySelector("#authSession");
 const authUserEmail = document.querySelector("#authUserEmail");
 const signOutButton = document.querySelector("#signOutButton");
+const switchAccountButton = document.querySelector("#switchAccountButton");
 
 console.info(`Nearo ${APP_VERSION}`);
 
@@ -268,6 +318,33 @@ function readSaved() {
   } catch {
     return [1, 3];
   }
+}
+
+function readMarketId() {
+  try {
+    const stored = localStorage.getItem(MARKET_STORAGE_KEY);
+    return MARKETS[stored] ? stored : DEFAULT_MARKET_ID;
+  } catch {
+    return DEFAULT_MARKET_ID;
+  }
+}
+
+function writeMarketId(marketId) {
+  try {
+    localStorage.setItem(MARKET_STORAGE_KEY, marketId);
+  } catch {
+    // Market switching still works for the current session if storage is unavailable.
+  }
+}
+
+function updateMarketUi() {
+  activeMarket = MARKETS[activeMarketId] || MARKETS[DEFAULT_MARKET_ID];
+  if (marketSelect) marketSelect.value = activeMarket.id;
+  if (heroEyebrowText) heroEyebrowText.textContent = activeMarket.eyebrow;
+  if (heroLede) heroLede.textContent = activeMarket.lede;
+  if (mapTitle) mapTitle.textContent = activeMarket.mapTitle;
+  if (mapCopy) mapCopy.textContent = activeMarket.mapCopy;
+  document.documentElement.dataset.market = activeMarket.id;
 }
 
 function writeSaved() {
@@ -318,10 +395,11 @@ function getFilteredEvents(options = {}) {
   const sort = sortSelect.value;
 
   const filtered = events.filter((event) => {
+    const matchesMarket = (event.marketId || DEFAULT_MARKET_ID) === activeMarket.id;
     const matchesCategory = activeCategory === "All" || event.category === activeCategory;
     const matchesDate = date === "Anytime" || event.dateGroup === date;
     const haystack = `${event.title} ${event.category} ${event.place} ${event.description}`.toLowerCase();
-    return matchesCategory && matchesDate && haystack.includes(query);
+    return matchesMarket && matchesCategory && matchesDate && haystack.includes(query);
   });
 
   return filtered.sort((a, b) => {
@@ -506,7 +584,7 @@ function geminiRequestBody(prompt, candidates) {
       role: "user",
       parts: [{
         text: [
-          "You are Nearo AI Guide for Singapore events.",
+          `You are Nearo AI Guide for ${activeMarket.label} events.`,
           "Recommend only from the provided event list. Do not invent events, venues, prices, or dates.",
           "Return strict JSON with this shape: {\"summary\":\"short answer\",\"picks\":[{\"id\":\"event id\",\"reason\":\"why it fits\"}]}",
           "Choose at most 5 picks. If nothing fits, return an empty picks array and explain why in summary.",
@@ -600,9 +678,10 @@ async function loadEventsFromSupabase() {
     if (normalized.length) {
       events = normalized;
       usingFallbackEvents = false;
-      activeMapId = events[0].id;
+      const marketEvents = events.filter((event) => event.marketId === activeMarket.id);
+      activeMapId = marketEvents[0]?.id || events[0].id;
       saved = new Set([...saved].filter((id) => events.some((event) => String(event.id) === String(id))));
-      toast(`Loaded ${events.length} events from Supabase`);
+      toast(`Loaded ${marketEvents.length} ${activeMarket.label} events`);
     } else {
       resultsMeta.textContent = "No published Supabase events yet. Showing demo events.";
     }
@@ -641,14 +720,20 @@ function updateAuthUi(user) {
   currentUser = user;
   const email = user?.email || "";
   const initials = email ? email.slice(0, 2).toUpperCase() : "?";
+  const isLoggedIn = Boolean(email);
+  const showForm = !isLoggedIn || authFormForced;
 
   accountAvatar.textContent = initials;
   accountLabel.textContent = email ? email.split("@")[0] : "Sign in";
   authUserEmail.textContent = email;
-  authSession.hidden = !email;
-  authForm.hidden = Boolean(email);
-  authTitle.textContent = email ? "You are signed in." : authMode === "login" ? "Welcome back." : "Create your account.";
-  authSubtitle.textContent = email ? "Your Supabase session is active on this device." : authMode === "login" ? "Log in to keep your Nearo account ready." : "Register with email and password.";
+  authSession.hidden = !isLoggedIn || authFormForced;
+  authForm.hidden = !showForm;
+  authTitle.textContent = authMode === "login" ? "Welcome back." : "Create your account.";
+  authSubtitle.textContent = isLoggedIn && !authFormForced
+    ? "Your Nearo account is active on this device."
+    : authMode === "login"
+      ? "Log in to keep your Nearo account ready."
+      : "Register with email and password.";
 }
 
 function setAuthMode(mode) {
@@ -658,7 +743,11 @@ function setAuthMode(mode) {
   });
 
   authTitle.textContent = mode === "login" ? "Welcome back." : "Create your account.";
-  authSubtitle.textContent = mode === "login" ? "Log in to keep your Nearo account ready." : "Register with email and password.";
+  authSubtitle.textContent = currentUser && !authFormForced
+    ? "Your Nearo account is active on this device."
+    : mode === "login"
+      ? "Log in to keep your Nearo account ready."
+      : "Register with email and password.";
   authSubmit.textContent = mode === "login" ? "Login" : "Create account";
   authNote.textContent = mode === "login" ? "Use the email and password you registered with." : "Password should be at least 6 characters.";
   document.querySelector("#authPassword").autocomplete = mode === "login" ? "current-password" : "new-password";
@@ -687,6 +776,7 @@ async function handleAuthSubmit(event) {
     const { data, error } = await request;
 
     if (error) throw error;
+    authFormForced = false;
     updateAuthUi(data.session?.user || null);
     authForm.reset();
     toast(authMode === "login" ? "Logged in" : data.session ? "Account created" : "Check your email to confirm");
@@ -708,6 +798,7 @@ async function signOut() {
     return;
   }
 
+  authFormForced = false;
   updateAuthUi(null);
   setAuthMode("login");
   toast("Signed out");
@@ -717,39 +808,58 @@ function normalizeSupabaseEvent(row) {
   const startsAt = row.starts_at ? new Date(row.starts_at) : new Date();
   const endsAt = row.ends_at ? new Date(row.ends_at) : new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
   const venue = row.venues || {};
+  const source = sourceLabel(row.event_sources?.name);
+  const market = marketForEvent(row, source);
   const coords = {
-    lat: Number(venue.latitude || SINGAPORE_CENTER.lat),
-    lng: Number(venue.longitude || SINGAPORE_CENTER.lng),
+    lat: Number(venue.latitude || market.center.lat),
+    lng: Number(venue.longitude || market.center.lng),
   };
   const priceMin = numberOrNull(row.price_min);
   const priceMax = numberOrNull(row.price_max) ?? priceMin;
 
   const category = row.category || "Event";
-  const source = sourceLabel(row.event_sources?.name);
 
   return {
     id: row.id,
     title: row.title || "Untitled event",
     category,
+    marketId: market.id,
     dateGroup: dateGroupFor(startsAt),
     day: formatDay(startsAt),
-    month: formatMonth(startsAt),
+    month: formatMonth(startsAt, market),
     sortDate: row.starts_at || startsAt.toISOString(),
-    time: formatEventTime(startsAt),
+    time: formatEventTime(startsAt, market),
     durationHours: Math.max((endsAt - startsAt) / 3600000, 1),
-    place: venue.name || row.venue_name || "Singapore",
-    distance: distanceFromCenter(coords),
-    price: formatPrice(priceMin, priceMax, row.currency || "SGD"),
+    place: venue.name || row.venue_name || market.defaultPlace,
+    distance: distanceFromCenter(coords, market),
+    price: formatPrice(priceMin, priceMax, row.currency || market.currency, market),
     priceValue: priceMin,
     people: row.people || "New listing",
     availability: row.availability || source,
     image: row.image_url || fallbackImageFor(category, source),
     description: row.description || "Official event details are coming soon.",
     coords,
-    map: mapPointFromCoords(coords),
+    map: mapPointFromCoords(coords, market),
     officialUrl: row.official_url,
     ticketUrl: row.ticket_url,
   };
+}
+
+function marketForEvent(row, source = "") {
+  const explicitMarket = String(row.market || row.country || "").toLowerCase();
+  if (MARKETS[explicitMarket]) return MARKETS[explicitMarket];
+
+  const venue = row.venues || {};
+  const text = [
+    source,
+    row.title,
+    row.description,
+    venue.name,
+    venue.address,
+    row.currency,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  return Object.values(MARKETS).find((market) => market.sourceKeywords.some((keyword) => text.includes(keyword))) || MARKETS[DEFAULT_MARKET_ID];
 }
 
 function dateGroupFor(date) {
@@ -773,24 +883,24 @@ function formatDay(date) {
   return String(date.getDate()).padStart(2, "0");
 }
 
-function formatMonth(date) {
-  return date.toLocaleString("en-SG", { month: "short", timeZone: "Asia/Singapore" }).toUpperCase();
+function formatMonth(date, market = activeMarket) {
+  return date.toLocaleString(market.locale, { month: "short", timeZone: market.timeZone }).toUpperCase();
 }
 
-function formatEventTime(date) {
-  return date.toLocaleString("en-SG", {
+function formatEventTime(date, market = activeMarket) {
+  return date.toLocaleString(market.locale, {
     weekday: "short",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-    timeZone: "Asia/Singapore",
+    timeZone: market.timeZone,
   });
 }
 
-function formatPrice(min, max, currency) {
+function formatPrice(min, max, currency, market = activeMarket) {
   if (min === null && max === null) return "See tickets";
   if (min === 0 && max === 0) return "Free";
-  const symbol = currency === "SGD" ? "S$" : `${currency} `;
+  const symbol = currency === market.currency ? market.currencySymbol : `${currency} `;
   return min === max ? `${symbol}${min}` : `${symbol}${min}-${max}`;
 }
 
@@ -809,25 +919,27 @@ function fallbackImageFor(category = "Event", source = "") {
   return FALLBACK_IMAGES[category] || FALLBACK_IMAGES.Event;
 }
 
-function distanceFromCenter(coords) {
+function distanceFromCenter(coords, market = activeMarket) {
   const earthRadius = 6371;
   const toRad = (value) => (value * Math.PI) / 180;
-  const dLat = toRad(coords.lat - SINGAPORE_CENTER.lat);
-  const dLng = toRad(coords.lng - SINGAPORE_CENTER.lng);
+  const dLat = toRad(coords.lat - market.center.lat);
+  const dLng = toRad(coords.lng - market.center.lng);
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(SINGAPORE_CENTER.lat)) * Math.cos(toRad(coords.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    Math.cos(toRad(market.center.lat)) * Math.cos(toRad(coords.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
   return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function mapPointFromCoords(coords) {
+function mapPointFromCoords(coords, market = activeMarket) {
+  const { minLat, maxLat, minLng, maxLng } = market.bounds;
   return {
-    x: Math.min(Math.max(((coords.lng - 103.79) / 0.15) * 100, 8), 92),
-    y: Math.min(Math.max(((1.34 - coords.lat) / 0.08) * 100, 8), 92),
+    x: Math.min(Math.max(((coords.lng - minLng) / (maxLng - minLng)) * 100, 8), 92),
+    y: Math.min(Math.max(((maxLat - coords.lat) / (maxLat - minLat)) * 100, 8), 92),
   };
 }
 
 function render() {
+  updateMarketUi();
   const filtered = getFilteredEvents();
   const totalPages = Math.max(Math.ceil(filtered.length / EVENTS_PER_PAGE), 1);
   currentPage = Math.min(Math.max(currentPage, 1), totalPages);
@@ -867,6 +979,36 @@ function render() {
   renderPagination(totalPages);
   renderMap(filtered);
   renderStats(filtered);
+}
+
+function switchMarket(marketId) {
+  if (!MARKETS[marketId] || marketId === activeMarket.id) return;
+
+  activeMarketId = marketId;
+  activeMarket = MARKETS[activeMarketId];
+  writeMarketId(activeMarketId);
+  clearAiRecommendations();
+  activeCategory = "All";
+  searchInput.value = "";
+  if (dateSelect) dateSelect.value = "Anytime";
+  sortSelect.value = "recommended";
+  resetPagination();
+  document.querySelectorAll(".filter").forEach((button, index) => button.classList.toggle("active", index === 0));
+
+  const marketEvents = events.filter((event) => event.marketId === activeMarket.id);
+  activeMapId = marketEvents[0]?.id || null;
+  if (googleMap) {
+    googleMarkers.forEach((marker) => marker.setMap(null));
+    googleMarkers.clear();
+    googleClusterMarkers.forEach((marker) => marker.setMap(null));
+    googleClusterMarkers = [];
+    googleMap.setCenter(activeMarket.center);
+    googleMap.setZoom(activeMarket.googleZoom);
+    googleMap.setOptions({ minZoom: activeMarket.googleMinZoom });
+  }
+
+  render();
+  toast(`Showing ${activeMarket.label} events`);
 }
 
 function renderPagination(totalPages) {
@@ -913,7 +1055,7 @@ function clearAiRecommendations() {
 }
 
 function renderSaved() {
-  const chosen = events.filter((event) => saved.has(String(event.id)));
+  const chosen = events.filter((event) => (event.marketId || DEFAULT_MARKET_ID) === activeMarket.id && saved.has(String(event.id)));
   const container = document.querySelector("#savedEvents");
 
   container.innerHTML = chosen.length
@@ -956,7 +1098,7 @@ function renderMap(filtered) {
 
 function mapLayerEvents(filtered) {
   if (aiRecommendationActive || searchInput.value.trim()) return filtered;
-  return activeCategory === "All" ? filtered : events;
+  return activeCategory === "All" ? filtered : events.filter((event) => (event.marketId || DEFAULT_MARKET_ID) === activeMarket.id);
 }
 
 function renderFallbackMap(mapEvents, visibleIds) {
@@ -1000,9 +1142,9 @@ function initGoogleMap() {
   if (!window.google || !google.maps || !googleMapEl) return;
 
   googleMap = new google.maps.Map(googleMapEl, {
-    center: SINGAPORE_CENTER,
-    zoom: 12,
-    minZoom: 11,
+    center: activeMarket.center,
+    zoom: activeMarket.googleZoom,
+    minZoom: activeMarket.googleMinZoom,
     maxZoom: 16,
     mapTypeControl: false,
     streetViewControl: false,
@@ -1493,13 +1635,20 @@ emptyAiButton.addEventListener("click", () => {
 document.querySelector("#plansNav").addEventListener("click", openDrawer);
 document.querySelector("#closeDrawer").addEventListener("click", closeDrawer);
 document.querySelector("#scrim").addEventListener("click", closeDrawer);
-document.querySelector("#locationButton").addEventListener("click", () => toast("Showing Singapore events"));
+marketSelect?.addEventListener("change", () => switchMarket(marketSelect.value));
 accountButton.addEventListener("click", () => {
-  setAuthMode(currentUser ? authMode : "login");
+  authFormForced = false;
+  setAuthMode("login");
+  updateAuthUi(currentUser);
   authDialog.showModal();
 });
 authForm.addEventListener("submit", handleAuthSubmit);
 signOutButton.addEventListener("click", signOut);
+switchAccountButton?.addEventListener("click", () => {
+  authFormForced = true;
+  setAuthMode("login");
+  updateAuthUi(currentUser);
+});
 
 document.querySelector("#sharePlans").addEventListener("click", async () => {
   const chosen = events.filter((event) => saved.has(String(event.id)));
@@ -1547,6 +1696,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+updateMarketUi();
 window.initGoogleMap = initGoogleMap;
 window.handleGoogleMapError = handleGoogleMapError;
 

@@ -1,6 +1,6 @@
-# Nearo Singapore
+# Nearo
 
-Nearo is a mobile-first local event discovery prototype for Singapore. It helps people browse nearby concerts, food experiences, workshops, art events, and outdoor activities, then save a short weekend plan.
+Nearo is a mobile-first local event discovery prototype for Singapore, with a Malaysia market base ready for expansion. It helps people browse nearby concerts, food experiences, workshops, art events, and outdoor activities, then save a short weekend plan.
 
 ## Current features
 
@@ -13,8 +13,10 @@ Nearo is a mobile-first local event discovery prototype for Singapore. It helps 
 - Share saved weekend plans
 - Preview events on Google Maps with a built-in fallback map
 - Load published events from Supabase
+- Switch between Singapore and Malaysia markets
 - Import official Singapore events from Ticketmaster, SISTIC, and Eventbrite
 - Import casual Singapore activities from public Eventbrite discovery pages
+- Prepare Malaysia imports from Ticketmaster Malaysia and public Eventbrite discovery pages
 - Open event detail dialogs
 - Responsive desktop and mobile layout
 
@@ -70,12 +72,18 @@ Render also works well if you deploy this as a **Web Service**. Do not use a pla
 
 Render will provide a public URL after deploy. The app serves the website and the private AI endpoint from the same service.
 
-## Refresh official events
+## Refresh events
 
 Use these local-only importers when you want to refresh the database:
 
 ```text
 npm run refresh-events
+```
+
+To refresh Malaysia-only sources:
+
+```text
+npm run refresh-malaysia
 ```
 
 Or run one source at a time:
@@ -85,9 +93,11 @@ node scripts/import-ticketmaster.js
 node scripts/import-sistic.js
 node scripts/import-eventbrite.js
 node scripts/import-eventbrite-casual.js
+node scripts/import-ticketmaster-my.js
+node scripts/import-eventbrite-casual-my.js
 ```
 
-The importers read private keys from ignored `config.js`, then upsert official event listings into Supabase without committing secrets. Eventbrite account-owned imports need a local `EVENTBRITE_PRIVATE_TOKEN`; casual Eventbrite discovery imports only need Supabase configured.
+The importers read private keys from ignored `config.js`, then upsert event listings into Supabase without committing secrets. Eventbrite account-owned imports need a local `EVENTBRITE_PRIVATE_TOKEN`; casual Eventbrite discovery imports only need Supabase configured.
 
 If existing SISTIC events are missing artwork, run `node scripts/import-sistic.js` again after pulling the latest code. The importer now checks multiple SISTIC image fields and normalizes relative image URLs.
 

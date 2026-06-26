@@ -2,6 +2,7 @@
   "scripts": {
     "build": "node scripts/build-config.js",
     "import-casual": "node scripts/import-eventbrite-casual.js",
+    "refresh-malaysia": "node scripts/import-malaysia-events.js",
     "refresh-events": "node scripts/import-all-events.js",
     "start": "node server.js"
   },

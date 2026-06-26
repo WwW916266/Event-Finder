@@ -26,10 +26,13 @@
       </nav>
 
       <div class="header-actions">
-        <button class="location-button" id="locationButton" type="button" aria-label="Change location">
-          <span class="pin-dot"></span>
-          <span>Singapore</span>
-        </button>
+        <label class="market-switch" for="marketSelect">
+          <span>Market</span>
+          <select id="marketSelect" aria-label="Choose market">
+            <option value="singapore">Singapore</option>
+            <option value="malaysia">Malaysia</option>
+          </select>
+        </label>
         <button class="account-button" id="accountButton" type="button" aria-label="Open account">
           <span class="account-avatar" id="accountAvatar">?</span>
           <span id="accountLabel">Sign in</span>
@@ -40,9 +43,9 @@
     <main>
       <section class="hero" id="discover" aria-labelledby="heroTitle">
         <div class="hero-copy">
-          <p class="eyebrow"><span></span> Singapore, curated live</p>
+          <p class="eyebrow"><span class="eyebrow-rule"></span> <span id="heroEyebrowText">Singapore, curated</span></p>
           <h1 id="heroTitle"><span class="hero-line">Go somewhere</span> <span class="hero-accent">good.</span></h1>
-          <p class="hero-lede">Concerts, theatre, sports, workshops, and city experiences across Singapore, sorted with official event data and a little AI help.</p>
+          <p class="hero-lede" id="heroLede">Concerts, theatre, sports, workshops, and city experiences across Singapore, sorted with official event data and a little AI help.</p>
         </div>
 
         <form class="search-shell" id="searchForm" role="search">
@@ -114,7 +117,7 @@
         <div class="city-copy">
           <p class="kicker light">Happening around you</p>
           <h2 id="mapTitle">Singapore at a glance.</h2>
-          <p>Tap a pin to preview an event, then save it to your weekend without leaving the map.</p>
+          <p id="mapCopy">Tap a pin to preview an event, then save it to your weekend without leaving the map.</p>
           <div class="stats" id="cityStats"></div>
         </div>
 
@@ -159,7 +162,10 @@
         <div class="auth-session" id="authSession" hidden>
           <span>Signed in as</span>
           <strong id="authUserEmail"></strong>
-          <button id="signOutButton" type="button">Sign out</button>
+          <div class="auth-session-actions">
+            <button id="switchAccountButton" type="button">Switch account</button>
+            <button id="signOutButton" type="button">Sign out</button>
+          </div>
         </div>
 
         <form class="auth-form" id="authForm">
