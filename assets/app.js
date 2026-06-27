@@ -393,7 +393,7 @@ function eventCard(event) {
 function getFilteredEvents(options = {}) {
   if (aiRecommendationActive && !options.ignoreAiRecommendations) return getAiRecommendedEvents();
 
-  const query = searchInput.value.trim().toLowerCase();
+  const query = options.ignoreQuery ? "" : searchInput.value.trim().toLowerCase();
   const date = dateSelect?.value || "Anytime";
   const sort = sortSelect.value;
   const mapAreaIds = !options.ignoreMapArea && mapAreaFilterIds.length
@@ -483,8 +483,102 @@ async function runAiGuide(rawPrompt) {
   }
 }
 
-function getAiEventCandidates() {
-  const filtered = getFilteredEvents({ ignoreAiRecommendations: true });
+async function runSmartSearch() {
+  const prompt = searchInput.value.trim();
+  clearAiRecommendations();
+  clearMapAreaFilterState();
+  resetPagination();
+  render();
+
+  if (!prompt) {
+    experienceShell.scrollIntoView({ behavior: "smooth" });
+    return;
+  }
+
+  const exactMatches = getFilteredEvents({ ignoreAiRecommendations: true });
+  if (exactMatches.length) {
+    experienceShell.scrollIntoView({ behavior: "smooth" });
+    return;
+  }
+
+  resultsMeta.textContent = `AI is looking for experiences related to "${prompt}"...`;
+  emptyState.hidden = false;
+  emptyState.querySelector("h3").textContent = "Finding nearby fits";
+  emptyState.querySelector("p").textContent = "No exact title matched, so AI is checking vibe, category, price, and venue clues.";
+  emptyAiButton.hidden = true;
+
+  try {
+    const candidates = getAiEventCandidates({ ignoreSearchQuery: true });
+    const result = await fetchGeminiRecommendations(prompt, candidates);
+    renderAiRecommendations(result, { openPanel: false });
+  } catch (error) {
+    console.error("Smart search failed", error);
+    const fallback = localIntentRecommendations(prompt, getAiEventCandidates({ ignoreSearchQuery: true }));
+    renderAiRecommendations(fallback, { openPanel: false });
+  }
+}
+
+function localIntentRecommendations(prompt, candidates) {
+  const terms = intentTerms(prompt);
+  const scored = candidates
+    .map((event) => {
+      const haystack = `${event.title} ${event.category} ${event.place} ${event.description} ${event.source}`.toLowerCase();
+      const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 2 : relatedIntentScore(term, haystack)), 0);
+      return { event, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  return {
+    summary: scored.length
+      ? "I found the closest real experiences by matching your vibe, category, and venue clues."
+      : "I could not find a close match yet. Try a broader vibe, artist, or activity.",
+    picks: scored.map(({ event }) => ({
+      id: event.id,
+      reason: "Closest match from the current event list.",
+    })),
+  };
+}
+
+function intentTerms(prompt) {
+  const text = prompt.toLowerCase();
+  const terms = text
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2);
+
+  if (/weeknd|r&b|rnb|pop|singer|concert|music|song/.test(text)) terms.push("concert", "music", "live", "song");
+  if (/romantic|date|couple|night/.test(text)) terms.push("jazz", "night", "dinner", "music");
+  if (/chinese|mandarin|cny|文化|中文/.test(text)) terms.push("chinese", "mandarin", "culture", "festival");
+  if (/kid|kids|family|child/.test(text)) terms.push("family", "workshop", "learning");
+  if (/food|eat|hawker|dinner|pop/.test(text)) terms.push("food", "market", "hawker", "popup");
+  if (/art|gallery|museum|show/.test(text)) terms.push("art", "theatre", "exhibition");
+  if (/outdoor|walk|nature|park/.test(text)) terms.push("outdoor", "park", "walk");
+
+  return [...new Set(terms)];
+}
+
+function relatedIntentScore(term, haystack) {
+  const groups = [
+    ["weeknd", "r&b", "rnb", "pop", "concert", "music", "song", "live"],
+    ["romantic", "date", "jazz", "night", "dinner"],
+    ["chinese", "mandarin", "culture", "festival"],
+    ["kid", "kids", "family", "workshop", "learning"],
+    ["food", "hawker", "market", "popup", "drink"],
+    ["art", "gallery", "museum", "theatre", "exhibition"],
+    ["outdoor", "park", "walk", "nature"],
+  ];
+  const group = groups.find((items) => items.includes(term));
+  return group?.some((item) => haystack.includes(item)) ? 1 : 0;
+}
+
+function getAiEventCandidates(options = {}) {
+  const filtered = getFilteredEvents({
+    ignoreAiRecommendations: true,
+    ignoreMapArea: true,
+    ignoreQuery: options.ignoreSearchQuery,
+  });
   const source = filtered.length ? filtered : events;
   return source.slice(0, 80).map((event) => ({
     id: String(event.id),
@@ -593,6 +687,8 @@ function geminiRequestBody(prompt, candidates) {
         text: [
           `You are Nearo AI Guide for ${activeMarket.label} events.`,
           "Recommend only from the provided event list. Do not invent events, venues, prices, or dates.",
+          "Treat artist names, moods, occasions, and vague phrases as intent signals. Example: The Weeknd implies pop, R&B, night out, live music, nightlife, and concert-like experiences.",
+          "If no title matches exactly, choose the closest real events by vibe, genre, audience, date, budget, and location.",
           "Return strict JSON with this shape: {\"summary\":\"short answer\",\"picks\":[{\"id\":\"event id\",\"reason\":\"why it fits\"}]}",
           "Choose at most 5 picks. If nothing fits, return an empty picks array and explain why in summary.",
           `User request: ${prompt}`,
@@ -613,7 +709,7 @@ function parseGeminiJson(text) {
   }
 }
 
-function renderAiRecommendations(result) {
+function renderAiRecommendations(result, options = {}) {
   const picks = Array.isArray(result.picks) ? result.picks : [];
   const pickedIds = picks
     .map((pick) => String(pick.id))
@@ -624,6 +720,11 @@ function renderAiRecommendations(result) {
   aiRecommendationActive = true;
   resetPagination();
   render();
+
+  if (options.openPanel === false) {
+    if (!pickedIds.length) emptyAiButton.hidden = false;
+    return;
+  }
 
   const cards = picks
     .map((pick) => {
@@ -1128,6 +1229,7 @@ function selectMapCluster(clusterEvents) {
 function setExperienceView(view = "discover", options = {}) {
   const mode = view === "map" ? "map" : "discover";
   experienceShell.dataset.view = mode;
+  document.body.classList.toggle("view-map", mode === "map");
   viewLinks.forEach((link) => link.classList.toggle("active", link.dataset.viewLink === mode));
 
   if (mode === "map") {
@@ -1151,14 +1253,9 @@ function runSearchPrompt(prompt) {
 
   searchInput.value = query;
   aiPrompt.value = query;
-  clearAiRecommendations();
-  clearMapAreaFilterState();
-  resetPagination();
-  render();
   searchInput.blur();
   searchForm.classList.remove("search-popover-open");
-  experienceShell.scrollIntoView({ behavior: "smooth", block: "start" });
-  runAiGuide(query);
+  runSmartSearch();
 }
 
 function renderSaved() {
@@ -1642,7 +1739,7 @@ document.addEventListener("click", (event) => {
   }
 
   const detailsButton = event.target.closest("[data-details]");
-  if (detailsButton && !cardAction) {
+  if (detailsButton && (!cardAction || detailsButton.matches("button, a"))) {
     openDetails(detailsButton.dataset.details);
     return;
   }
@@ -1698,12 +1795,8 @@ grid.addEventListener("focusin", (event) => {
 
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  resetPagination();
-  clearAiRecommendations();
-  clearMapAreaFilterState();
-  render();
   searchForm.classList.remove("search-popover-open");
-  experienceShell.scrollIntoView({ behavior: "smooth" });
+  runSmartSearch();
 });
 
 searchInput.addEventListener("input", () => {
@@ -1817,6 +1910,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 updateMarketUi();
+setExperienceView("discover", { scroll: false });
 window.initGoogleMap = initGoogleMap;
 window.handleGoogleMapError = handleGoogleMapError;
 
