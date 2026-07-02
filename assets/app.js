@@ -363,7 +363,7 @@ function eventCard(event) {
 
   return `<article class="event-card" data-card="${event.id}" data-details="${event.id}" tabindex="0" role="button" aria-label="View details for ${escapeHtml(event.title)}">
     <div class="event-image" style="${eventImageStyle(event)}">
-      <div class="date-badge"><span>${event.month}</span><strong>${event.day}</strong></div>
+      <div class="date-badge"><span>${event.month}</span><strong>${event.day}</strong><small>${eventYear(event)}</small></div>
       <button class="save-button ${isSaved ? "saved" : ""}" type="button" data-save="${event.id}" aria-label="${isSaved ? "Remove from" : "Save to"} plans">${isSaved ? "♥" : "♡"}</button>
     </div>
     <div class="card-body">
@@ -372,7 +372,7 @@ function eventCard(event) {
         <span class="availability">${sourceBadge(event)}</span>
       </div>
       <h3>${event.title}</h3>
-      <div class="meta"><span aria-hidden="true">↗</span><span>${event.time}</span></div>
+      <div class="meta"><span aria-hidden="true">↗</span><span>${eventDateTime(event)}</span></div>
       <div class="meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
       <div class="card-footer">
         <div class="attendees"><span class="mini-avatar">M</span><span class="mini-avatar">J</span><span>${event.people}</span></div>
@@ -410,16 +410,69 @@ function getFilteredEvents(options = {}) {
   });
 
   return filtered.sort((a, b) => {
-    if (sort === "soonest") return new Date(a.sortDate) - new Date(b.sortDate);
-    if (sort === "distance") return a.distance - b.distance;
-    if (sort === "price") return (a.priceValue ?? Number.MAX_SAFE_INTEGER) - (b.priceValue ?? Number.MAX_SAFE_INTEGER);
-    return a.id - b.id;
+    if (sort === "soonest") return compareUpcomingSoonest(a, b);
+    if (sort === "distance") return compareUpcomingState(a, b) || a.distance - b.distance || compareUpcomingSoonest(a, b);
+    if (sort === "price") return compareUpcomingState(a, b) || eventPrice(a) - eventPrice(b) || compareUpcomingSoonest(a, b);
+    return recommendationScore(b) - recommendationScore(a) || compareUpcomingSoonest(a, b);
   });
+}
+
+function compareUpcomingSoonest(a, b) {
+  return compareUpcomingState(a, b) || eventTimestamp(a) - eventTimestamp(b);
+}
+
+function compareUpcomingState(a, b) {
+  return Number(isPastEvent(a)) - Number(isPastEvent(b));
+}
+
+function isPastEvent(event) {
+  return eventTimestamp(event) < Date.now();
+}
+
+function eventTimestamp(event) {
+  const timestamp = new Date(event.sortDate).getTime();
+  return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
+}
+
+function eventPrice(event) {
+  return event.priceValue ?? Number.MAX_SAFE_INTEGER;
+}
+
+function recommendationScore(event) {
+  const now = Date.now();
+  const startsAt = eventTimestamp(event);
+  const daysAway = Number.isFinite(startsAt) ? Math.max((startsAt - now) / 86400000, 0) : 365;
+  const isPast = Number.isFinite(startsAt) && startsAt < now;
+  const price = event.priceValue ?? 75;
+  const distance = event.distance ?? 12;
+  const source = String(event.availability || "").toLowerCase();
+
+  let score = 100;
+  score -= Math.min(daysAway * 4, 70);
+  score -= Math.min(distance * 2, 25);
+  score -= Math.min(price / 8, 18);
+  if (price === 0) score += 8;
+  if (source.includes("ticketmaster") || source.includes("sistic") || source.includes("eventbrite")) score += 10;
+  if (saved.has(String(event.id))) score += 6;
+  if (isPast) score -= 120;
+  return score;
 }
 
 function getAiRecommendedEvents() {
   const ids = new Set(aiRecommendedIds.map(String));
   return events.filter((event) => ids.has(String(event.id)));
+}
+
+function eventYear(event) {
+  if (event.year) return event.year;
+  const date = new Date(event.sortDate);
+  return Number.isNaN(date.getTime()) ? "" : formatYear(date, MARKETS[event.marketId] || activeMarket);
+}
+
+function eventDateTime(event) {
+  const date = new Date(event.sortDate);
+  if (Number.isNaN(date.getTime())) return event.time;
+  return formatEventTime(date, MARKETS[event.marketId] || activeMarket);
 }
 
 function eventImage(event) {
@@ -584,7 +637,7 @@ function getAiEventCandidates(options = {}) {
     id: String(event.id),
     title: event.title,
     category: event.category,
-    date: event.time,
+    date: eventDateTime(event),
     place: event.place,
     price: event.price,
     source: event.availability,
@@ -734,7 +787,7 @@ function renderAiRecommendations(result, options = {}) {
         <span>${event.category}</span>
         <h4>${event.title}</h4>
         <p>${pick.reason || "A good fit for your request."}</p>
-        <div>${event.time} · ${event.place}</div>
+        <div>${eventDateTime(event)} · ${event.place}</div>
         <button class="btn-secondary" type="button" data-details="${event.id}">View details</button>
       </article>`;
     })
@@ -935,6 +988,7 @@ function normalizeSupabaseEvent(row) {
     dateGroup: dateGroupFor(startsAt),
     day: formatDay(startsAt),
     month: formatMonth(startsAt, market),
+    year: formatYear(startsAt, market),
     sortDate: row.starts_at || startsAt.toISOString(),
     time: formatEventTime(startsAt, market),
     durationHours: Math.max((endsAt - startsAt) / 3600000, 1),
@@ -995,9 +1049,16 @@ function formatMonth(date, market = activeMarket) {
   return date.toLocaleString(market.locale, { month: "short", timeZone: market.timeZone }).toUpperCase();
 }
 
+function formatYear(date, market = activeMarket) {
+  return date.toLocaleString(market.locale, { year: "numeric", timeZone: market.timeZone });
+}
+
 function formatEventTime(date, market = activeMarket) {
   return date.toLocaleString(market.locale, {
     weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -1267,7 +1328,7 @@ function renderSaved() {
         <div class="saved-thumb" style="${eventImageStyle(event)}"></div>
         <div>
           <h3>${event.title}</h3>
-          <p>${event.time}<br>${event.place}</p>
+          <p>${eventDateTime(event)}<br>${event.place}</p>
           <div class="saved-links">
             <a class="calendar-link" href="${calendarUrl(event)}" target="_blank" rel="noreferrer">Google Calendar</a>
             <button class="calendar-link" type="button" data-calendar="${event.id}">Calendar file</button>
@@ -1619,7 +1680,7 @@ function openDetails(id) {
       <span class="card-tag">${event.category}</span>
       <h2 id="dialogTitle">${event.title}</h2>
       <p>${event.description}</p>
-      <div class="meta"><span aria-hidden="true">↗</span><span>${event.time}</span></div>
+      <div class="meta"><span aria-hidden="true">↗</span><span>${eventDateTime(event)}</span></div>
       <div class="meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
       <div class="dialog-actions">
         <button class="dialog-save btn-primary" type="button" data-save="${event.id}">${isSaved ? "Remove from plans" : "Save to plans"}</button>

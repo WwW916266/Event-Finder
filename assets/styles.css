@@ -886,11 +886,11 @@ body.view-map .toolbar {
   left: 16px;
   top: 16px;
   width: 54px;
-  height: 58px;
+  min-height: 66px;
   border-radius: var(--radius);
   background: white;
   text-align: center;
-  padding-top: 7px;
+  padding: 7px 4px 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -900,10 +900,21 @@ body.view-map .toolbar {
 }
 
 .date-badge span {
+  display: block;
   color: var(--accent);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 1px;
+}
+
+.date-badge small {
+  display: block;
+  margin-top: 2px;
+  color: #52625c;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 .save-button {
