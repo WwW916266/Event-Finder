@@ -221,21 +221,6 @@ const MARKETS = {
 };
 const MARKET_STORAGE_KEY = "nearo.market";
 const DEFAULT_MARKET_ID = "singapore";
-const MAP_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#f3e5d3" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#7f6758" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#fff8ef" }] },
-  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#d7bca5" }] },
-  { featureType: "landscape.man_made", elementType: "geometry", stylers: [{ color: "#f7eadb" }] },
-  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#ead9c4" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#a77462" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#fff6ea" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#ead0b7" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#967765" }] },
-  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#e8d2bd" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#b9d8d2" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#6f948c" }] },
-];
 const FALLBACK_IMAGES = {
   Art: "https://images.unsplash.com/photo-1507924538820-ede94a04019d?auto=format&fit=crop&w=1000&q=85",
   Concert: "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=1000&q=85",
@@ -372,19 +357,20 @@ function eventCard(event) {
         <span class="availability">${sourceBadge(event)}</span>
       </div>
       <h3>${event.title}</h3>
-      <div class="meta"><span aria-hidden="true">↗</span><span>${eventDateTime(event)}</span></div>
-      <div class="meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
+      <div class="meta">${calendarMetaIcon()}<span>${eventDateTime(event)}</span></div>
+      <div class="meta">${locationMetaIcon()}<span>${event.place}</span></div>
       <div class="card-footer">
-        <div class="attendees"><span class="mini-avatar">M</span><span class="mini-avatar">J</span><span>${event.people}</span></div>
         <div class="card-utility">
-          <span class="price">${event.price}</span>
           <button class="icon-action" type="button" data-calendar="${event.id}" aria-label="Add ${escapeHtml(event.title)} to calendar">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"></path></svg>
+            <span>Calendar</span>
           </button>
           <button class="icon-action" type="button" data-map="${event.id}" aria-label="Show ${escapeHtml(event.title)} on map">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s7-5.15 7-11a7 7 0 1 0-14 0c0 5.85 7 11 7 11Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
+            <span>Map</span>
           </button>
         </div>
+        <span class="price">${event.price}</span>
       </div>
     </div>
   </article>`;
@@ -473,6 +459,14 @@ function eventDateTime(event) {
   const date = new Date(event.sortDate);
   if (Number.isNaN(date.getTime())) return event.time;
   return formatEventTime(date, MARKETS[event.marketId] || activeMarket);
+}
+
+function calendarMetaIcon() {
+  return `<svg class="meta-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"></path></svg>`;
+}
+
+function locationMetaIcon() {
+  return `<svg class="meta-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s7-5.15 7-11a7 7 0 1 0-14 0c0 5.85 7 11 7 11Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>`;
 }
 
 function eventImage(event) {
@@ -996,7 +990,7 @@ function normalizeSupabaseEvent(row) {
     distance: distanceFromCenter(coords, market),
     price: formatPrice(priceMin, priceMax, row.currency || market.currency, market),
     priceValue: priceMin,
-    people: row.people || "New listing",
+    people: row.people || "",
     availability: row.availability || source,
     image: row.image_url || fallbackImageFor(category, source),
     description: row.description || "Official event details are coming soon.",
@@ -1413,7 +1407,6 @@ function initGoogleMap() {
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: true,
-    styles: MAP_STYLE,
   });
 
   googleMap.addListener("idle", () => {
@@ -1680,8 +1673,8 @@ function openDetails(id) {
       <span class="card-tag">${event.category}</span>
       <h2 id="dialogTitle">${event.title}</h2>
       <p>${event.description}</p>
-      <div class="meta"><span aria-hidden="true">↗</span><span>${eventDateTime(event)}</span></div>
-      <div class="meta"><span aria-hidden="true">⌖</span><span>${event.place}</span></div>
+      <div class="meta">${calendarMetaIcon()}<span>${eventDateTime(event)}</span></div>
+      <div class="meta">${locationMetaIcon()}<span>${event.place}</span></div>
       <div class="dialog-actions">
         <button class="dialog-save btn-primary" type="button" data-save="${event.id}">${isSaved ? "Remove from plans" : "Save to plans"}</button>
         <button class="dialog-calendar btn-secondary" type="button" data-calendar="${event.id}">Add calendar</button>

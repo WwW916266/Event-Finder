@@ -983,12 +983,17 @@ body.view-map .toolbar {
   margin-top: 7px;
 }
 
-.meta span:first-child {
+.meta-icon {
   width: 16px;
+  height: 16px;
   color: #9aa59f;
   flex: none;
-  font-size: 12px;
-  line-height: 1.45;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: translateY(1px);
 }
 
 .card-footer {
@@ -998,65 +1003,39 @@ body.view-map .toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
-}
-
-.attendees {
-  display: flex;
-  align-items: center;
-  min-width: 150px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.mini-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 2px solid white;
-  background: var(--lime);
-  display: grid;
-  place-items: center;
-  font-size: 8px;
-  font-weight: 800;
-  margin-right: -6px;
-}
-
-.mini-avatar:nth-child(2) {
-  background: var(--sky);
-}
-
-.attendees span:last-child {
-  margin-left: 12px;
 }
 
 .price {
   flex: none;
   font-size: 13px;
   font-weight: 900;
-}
-
-.card-utility {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
   margin-left: auto;
 }
 
+.card-utility {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .icon-action {
-  width: 34px;
-  height: 34px;
+  min-width: 0;
+  min-height: 36px;
   border: 1px solid rgba(23, 35, 31, 0.11);
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.74);
   color: var(--ink);
-  display: inline-grid;
-  place-items: center;
-  opacity: 0;
-  transform: translateY(3px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 850;
   transition: opacity 0.18s ease, transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
@@ -1068,12 +1047,6 @@ body.view-map .toolbar {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.event-card:hover .icon-action,
-.event-card:focus-within .icon-action {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .icon-action:hover,
@@ -1192,11 +1165,11 @@ body.view-map .toolbar {
   min-height: 0;
   height: 100%;
   background:
-    radial-gradient(circle at 18% 18%, rgba(255, 151, 121, 0.26), transparent 26%),
-    radial-gradient(circle at 84% 22%, rgba(185, 216, 210, 0.44), transparent 28%),
-    linear-gradient(27deg, transparent 48%, rgba(178, 132, 103, 0.08) 49%, rgba(178, 132, 103, 0.08) 51%, transparent 52%),
-    linear-gradient(117deg, transparent 48%, rgba(120, 148, 139, 0.07) 49%, rgba(120, 148, 139, 0.07) 51%, transparent 52%),
-    #f3e5d3;
+    radial-gradient(circle at 18% 18%, rgba(140, 197, 122, 0.24), transparent 26%),
+    radial-gradient(circle at 84% 22%, rgba(127, 190, 225, 0.32), transparent 28%),
+    linear-gradient(27deg, transparent 48%, rgba(92, 112, 128, 0.08) 49%, rgba(92, 112, 128, 0.08) 51%, transparent 52%),
+    linear-gradient(117deg, transparent 48%, rgba(92, 112, 128, 0.07) 49%, rgba(92, 112, 128, 0.07) 51%, transparent 52%),
+    #e8efe7;
   background-size: 100% 100%, 100% 100%, 140px 140px, 140px 140px, auto;
 }
 
@@ -1216,11 +1189,11 @@ body.view-map .toolbar {
   inset: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 18%, rgba(255, 151, 121, 0.26), transparent 26%),
-    radial-gradient(circle at 84% 22%, rgba(185, 216, 210, 0.44), transparent 28%),
-    linear-gradient(27deg, transparent 48%, rgba(178, 132, 103, 0.08) 49%, rgba(178, 132, 103, 0.08) 51%, transparent 52%),
-    linear-gradient(117deg, transparent 48%, rgba(120, 148, 139, 0.07) 49%, rgba(120, 148, 139, 0.07) 51%, transparent 52%),
-    #f3e5d3;
+    radial-gradient(circle at 18% 18%, rgba(140, 197, 122, 0.24), transparent 26%),
+    radial-gradient(circle at 84% 22%, rgba(127, 190, 225, 0.32), transparent 28%),
+    linear-gradient(27deg, transparent 48%, rgba(92, 112, 128, 0.08) 49%, rgba(92, 112, 128, 0.08) 51%, transparent 52%),
+    linear-gradient(117deg, transparent 48%, rgba(92, 112, 128, 0.07) 49%, rgba(92, 112, 128, 0.07) 51%, transparent 52%),
+    #e8efe7;
   background-size: 100% 100%, 100% 100%, 140px 140px, 140px 140px, auto;
 }
 
@@ -1232,7 +1205,7 @@ body.view-map .toolbar {
   top: 50%;
   width: 390px;
   height: 390px;
-  border: 1px solid rgba(178, 132, 103, 0.18);
+  border: 1px solid rgba(92, 112, 128, 0.16);
   border-radius: 50%;
   transform: translate(-50%, -50%);
 }
@@ -1264,7 +1237,7 @@ body.view-map .toolbar {
   position: absolute;
   height: 2px;
   border-radius: 999px;
-  background: rgba(154, 111, 87, 0.2);
+  background: rgba(88, 106, 124, 0.24);
   transform-origin: left center;
 }
 
