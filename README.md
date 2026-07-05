@@ -1,16 +1,19 @@
 # Nearo
 
-Nearo is a mobile-first local event discovery prototype for Singapore, with a Malaysia market base ready for expansion. It helps people browse nearby concerts, food experiences, workshops, art events, and outdoor activities, then save a short weekend plan.
+Nearo is a mobile-first local event discovery prototype for Singapore, with a Malaysia market base ready for expansion. It helps people browse nearby concerts, food experiences, workshops, art events, and outdoor activities, then save, share, and compare short weekend plans with friends.
 
 ## Current features
 
 - Search events by title, category, place, or description
-- Filter by category and date window
+- Filter by category, vibe, and date window
 - Sort by recommendation, soonest, distance, or price
+- See event mood labels such as Chill, Energetic, Creative, Foodie, Outdoorsy, and Social
+- See crowd prediction badges based on event timing, price, category, and source signals
+- See lightweight friend-saved activity on event cards and detail views
 - Save events to a persistent weekend planner
 - Remove saved events from cards, map previews, details, or the drawer
 - Add events to Google Calendar with event-specific times
-- Share saved weekend plans
+- Share individual events or saved weekend plans
 - Preview events on Google Maps with a built-in fallback map
 - Load published events from Supabase
 - Switch between Singapore and Malaysia markets
@@ -18,6 +21,7 @@ Nearo is a mobile-first local event discovery prototype for Singapore, with a Ma
 - Import casual Singapore activities from public Eventbrite discovery pages
 - Prepare Malaysia imports from Ticketmaster Malaysia and public Eventbrite discovery pages
 - Open event detail dialogs
+- Cleaner event cards with clamped titles, separated organizer prefixes, consistent price display, and compact dropdown filters
 - Responsive desktop and mobile layout
 
 ## Run the website
@@ -121,10 +125,12 @@ This is a static prototype. Google Maps and Supabase use keys from an ignored lo
 
 Real API keys, secrets, or private credentials should never be committed to this repository.
 
+Friend-saved activity and crowd prediction are currently lightweight product signals in the browser UI. They are designed to show the intended experience before a full friends/social backend is connected.
+
 ## Possible next steps
 
 - Add organizer event submissions
-- Add user accounts and cloud-synced saved plans
+- Add real friend connections and cloud-synced saved plans
 - Add more real Singapore event feeds
 - Add location-based recommendations
 - Deploy the static site publicly

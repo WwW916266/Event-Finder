@@ -134,9 +134,9 @@ select:focus-visible {
 .site-header {
   min-height: var(--header-height);
   padding: 0 5.5vw;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 24px;
   border-bottom: 1px solid rgba(23, 35, 31, 0.1);
   position: sticky;
@@ -147,6 +147,7 @@ select:focus-visible {
 }
 
 .brand {
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -168,6 +169,7 @@ select:focus-visible {
 }
 
 .primary-nav {
+  justify-self: center;
   display: flex;
   align-items: center;
   gap: 30px;
@@ -211,6 +213,7 @@ select:focus-visible {
 }
 
 .header-actions {
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -374,6 +377,7 @@ p {
 
 .search-field,
 .select-field,
+.filter-field,
 .sort-field {
   background: var(--surface-warm);
   border: 1px solid rgba(23, 35, 31, 0.08);
@@ -398,6 +402,7 @@ p {
 
 .search-field span,
 .select-field span,
+.filter-field span,
 .sort-field span {
   color: var(--muted);
   font-size: 10px;
@@ -408,6 +413,7 @@ p {
 
 .search-field input,
 .select-field select,
+.filter-field select,
 .sort-field select {
   width: 100%;
   border: 0;
@@ -622,36 +628,20 @@ body.view-map .toolbar {
 
 .toolbar {
   margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  gap: 16px;
+  gap: 15px 16px;
 }
 
-.filters {
+.filter-selects {
   display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 0 0 8px;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
 }
 
-.filter {
-  flex: none;
-  min-height: 41px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: white;
-  padding: 0 16px;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.filter.active {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: white;
-}
-
+.filter-field,
 .sort-field {
   width: 178px;
   flex: none;
@@ -659,6 +649,7 @@ body.view-map .toolbar {
 }
 
 .toolbar-actions {
+  grid-column: 2;
   flex: none;
   display: flex;
   align-items: center;
@@ -968,9 +959,143 @@ body.view-map .toolbar {
 }
 
 .card-body h3 {
-  margin: 9px 0 13px;
+  margin: 7px 0 13px;
   font: 800 21px / 1.24 Manrope, sans-serif;
   min-height: 52px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title-prefix {
+  max-width: 100%;
+  margin: 9px 0 0;
+  color: #7c8782;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.1px;
+  line-height: 1.25;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-row {
+  margin: -2px 0 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.mood-chip {
+  width: max-content;
+  max-width: 100%;
+  min-height: 30px;
+  margin: 0;
+  border: 1px solid rgba(23, 35, 31, 0.08);
+  border-radius: 999px;
+  background: rgba(247, 248, 246, 0.88);
+  color: #303934;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.mood-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.crowd-badge {
+  width: max-content;
+  max-width: 100%;
+  min-height: 30px;
+  border: 1px solid rgba(23, 35, 31, 0.1);
+  border-radius: 999px;
+  background: #f8faf8;
+  color: #3f4d48;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.crowd-badge[data-crowd="calm"] {
+  background: #edf8ee;
+  color: #326b39;
+}
+
+.crowd-badge[data-crowd="moderate"] {
+  background: #eef5ff;
+  color: #315f99;
+}
+
+.crowd-badge[data-crowd="busy"] {
+  background: #fff5dd;
+  color: #85601a;
+}
+
+.crowd-badge[data-crowd="packed"] {
+  background: #ffece8;
+  color: #9a3e31;
+}
+
+.crowd-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+}
+
+.crowd-icon rect {
+  fill: currentColor;
+  opacity: 0.22;
+}
+
+.crowd-icon rect.active {
+  opacity: 1;
+}
+
+.friend-saved-badge {
+  width: max-content;
+  max-width: 100%;
+  min-height: 22px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #6c7772;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.friends-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .meta {
@@ -1456,6 +1581,18 @@ body.view-map .toolbar {
   padding: 24px;
 }
 
+.dialog-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dialog-topline .signal-row {
+  margin: 0;
+}
+
 .dialog-body h2 {
   margin: 5px 0 10px;
   font: 800 32px / 1.1 Manrope, sans-serif;
@@ -1464,6 +1601,24 @@ body.view-map .toolbar {
 .dialog-body p {
   color: var(--muted);
   line-height: 1.65;
+}
+
+.dialog-body .friend-note {
+  border: 1px solid rgba(255, 91, 69, 0.16);
+  border-radius: var(--radius);
+  background: #fff6f3;
+  color: #733a30;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.friend-note .friends-icon {
+  margin-top: 1px;
 }
 
 .dialog-actions {
@@ -1901,11 +2056,21 @@ footer {
 
   .toolbar {
     align-items: stretch;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .toolbar-actions {
+    grid-column: 1;
+    grid-row: auto;
     justify-content: space-between;
+  }
+
+  .filter-selects {
+    flex-wrap: wrap;
+  }
+
+  .filter-field {
+    width: min(100%, 178px);
   }
 
   .sort-field {
@@ -2072,6 +2237,12 @@ footer {
     gap: 8px;
   }
 
+  .filter-selects {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .filter-field,
   .sort-field {
     width: 100%;
   }

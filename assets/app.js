@@ -231,10 +231,51 @@ const FALLBACK_IMAGES = {
   Sports: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=1000&q=85",
   SISTIC: "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=1000&q=85",
 };
+const MOODS = {
+  chill: {
+    id: "chill",
+    label: "Chill",
+    keywords: ["jazz", "acoustic", "calm", "relaxed", "morning", "sunrise", "sketch", "garden", "picnic", "listening-room"],
+  },
+  energetic: {
+    id: "energetic",
+    label: "Energetic",
+    keywords: ["concert", "music", "sports", "run", "fitness", "dance", "night", "festival", "live", "party"],
+  },
+  creative: {
+    id: "creative",
+    label: "Creative",
+    keywords: ["art", "arts", "workshop", "class", "pottery", "craft", "film", "photo", "exhibition", "theatre", "gallery", "learning"],
+  },
+  foodie: {
+    id: "foodie",
+    label: "Foodie",
+    keywords: ["food", "drink", "dinner", "coffee", "wine", "market", "hawker", "pop-up", "grill", "restaurant"],
+  },
+  outdoorsy: {
+    id: "outdoorsy",
+    label: "Outdoorsy",
+    keywords: ["outdoor", "outdoors", "park", "garden", "nature", "walk", "cycle", "coastal", "botanic"],
+  },
+  social: {
+    id: "social",
+    label: "Social",
+    keywords: ["social", "community", "circle", "networking", "open mic", "meetup", "group", "friends"],
+  },
+};
+const MOOD_PRIORITY = ["foodie", "outdoorsy", "creative", "energetic", "social", "chill"];
+const CROWD_LEVELS = [
+  { id: "calm", label: "Calm crowd", shortLabel: "Calm", maxScore: 35 },
+  { id: "moderate", label: "Moderate crowd", shortLabel: "Moderate", maxScore: 55 },
+  { id: "busy", label: "Busy crowd", shortLabel: "Busy", maxScore: 75 },
+  { id: "packed", label: "Packed crowd", shortLabel: "Packed", maxScore: Infinity },
+];
+const FRIENDS = ["Maya", "Jun", "Aisha", "Leo", "Sam"];
 
 let events = fallbackEvents.map((event) => ({ ...event, marketId: DEFAULT_MARKET_ID }));
 let saved = new Set(readSaved());
 let activeCategory = "All";
+let activeMood = "All";
 let activeMapId = events[0].id;
 let googleMap;
 let googleMarkers = new Map();
@@ -260,6 +301,8 @@ const planCount = document.querySelector("#planCount");
 const searchInput = document.querySelector("#searchInput");
 const searchForm = document.querySelector("#searchForm");
 const dateSelect = document.querySelector("#dateSelect");
+const categorySelect = document.querySelector("#categorySelect");
+const moodSelect = document.querySelector("#moodSelect");
 const sortSelect = document.querySelector("#sortSelect");
 const resultsMeta = document.querySelector("#resultsMeta");
 const pagination = document.querySelector("#pagination");
@@ -345,6 +388,7 @@ function writeSaved() {
 
 function eventCard(event) {
   const isSaved = saved.has(String(event.id));
+  const titleParts = splitEventTitle(event.title);
 
   return `<article class="event-card" data-card="${event.id}" data-details="${event.id}" tabindex="0" role="button" aria-label="View details for ${escapeHtml(event.title)}">
     <div class="event-image" style="${eventImageStyle(event)}">
@@ -356,7 +400,9 @@ function eventCard(event) {
         <span class="card-tag">${event.category}</span>
         <span class="availability">${sourceBadge(event)}</span>
       </div>
-      <h3>${event.title}</h3>
+      ${titleParts.prefix ? `<div class="title-prefix">${escapeHtml(titleParts.prefix)}</div>` : ""}
+      <h3>${escapeHtml(titleParts.title)}</h3>
+      <div class="signal-row">${eventMoodChip(event)}${eventCrowdBadge(event)}${friendSavedBadge(event)}</div>
       <div class="meta">${calendarMetaIcon()}<span>${eventDateTime(event)}</span></div>
       <div class="meta">${locationMetaIcon()}<span>${event.place}</span></div>
       <div class="card-footer">
@@ -369,11 +415,36 @@ function eventCard(event) {
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s7-5.15 7-11a7 7 0 1 0-14 0c0 5.85 7 11 7 11Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
             <span>Map</span>
           </button>
+          <button class="icon-action" type="button" data-share-event="${event.id}" aria-label="Share ${escapeHtml(event.title)} with friends">
+            ${shareIcon()}
+            <span>Share</span>
+          </button>
         </div>
-        <span class="price">${event.price}</span>
+        <span class="price">${displayPrice(event)}</span>
       </div>
     </div>
   </article>`;
+}
+
+function splitEventTitle(title = "") {
+  const normalizedTitle = String(title || "").trim();
+  const separatorIndex = normalizedTitle.indexOf("|");
+  if (separatorIndex <= 0) return { prefix: "", title: normalizedTitle };
+
+  const prefix = normalizedTitle.slice(0, separatorIndex).trim();
+  const cleanTitle = normalizedTitle.slice(separatorIndex + 1).trim();
+  if (!prefix || !cleanTitle) return { prefix: "", title: normalizedTitle };
+
+  return { prefix, title: cleanTitle };
+}
+
+function displayPrice(event) {
+  if (event.priceValue === 0) return "Free";
+
+  const price = String(event.price || "").trim();
+  if (!price || /^see tickets$/i.test(price)) return "Price TBA";
+
+  return price;
 }
 
 function getFilteredEvents(options = {}) {
@@ -390,9 +461,11 @@ function getFilteredEvents(options = {}) {
     const matchesMarket = (event.marketId || DEFAULT_MARKET_ID) === activeMarket.id;
     const matchesArea = !mapAreaIds || mapAreaIds.has(String(event.id));
     const matchesCategory = activeCategory === "All" || event.category === activeCategory;
+    const matchesMood = activeMood === "All" || eventMood(event).id === activeMood;
     const matchesDate = date === "Anytime" || event.dateGroup === date;
-    const haystack = `${event.title} ${event.category} ${event.place} ${event.description}`.toLowerCase();
-    return matchesMarket && matchesArea && matchesCategory && matchesDate && haystack.includes(query);
+    const mood = eventMood(event);
+    const haystack = `${event.title} ${event.category} ${mood.label} ${mood.id} ${event.place} ${event.description}`.toLowerCase();
+    return matchesMarket && matchesArea && matchesCategory && matchesMood && matchesDate && haystack.includes(query);
   });
 
   return filtered.sort((a, b) => {
@@ -459,6 +532,113 @@ function eventDateTime(event) {
   const date = new Date(event.sortDate);
   if (Number.isNaN(date.getTime())) return event.time;
   return formatEventTime(date, MARKETS[event.marketId] || activeMarket);
+}
+
+function eventMood(event) {
+  if (event.mood && MOODS[event.mood]) return MOODS[event.mood];
+
+  const text = [
+    event.title,
+    event.category,
+    event.place,
+    event.description,
+    event.availability,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  const matched = MOOD_PRIORITY.find((moodId) => MOODS[moodId].keywords.some((keyword) => text.includes(keyword)));
+  return MOODS[matched] || MOODS.chill;
+}
+
+function eventMoodChip(event) {
+  const mood = eventMood(event);
+  return `<span class="mood-chip" data-mood="${mood.id}">${moodIcon(mood.id)}<span>${mood.label}</span></span>`;
+}
+
+function eventCrowd(event) {
+  const date = new Date(event.sortDate);
+  const hour = Number.isNaN(date.getTime()) ? 12 : date.getHours();
+  const day = Number.isNaN(date.getTime()) ? 1 : date.getDay();
+  const isWeekend = day === 0 || day === 5 || day === 6;
+  const isEvening = hour >= 17 && hour <= 23;
+  const isFree = event.priceValue === 0;
+  const category = String(event.category || "").toLowerCase();
+  const source = String(event.availability || "").toLowerCase();
+  const mood = eventMood(event).id;
+  const text = `${event.title || ""} ${event.description || ""} ${event.place || ""}`.toLowerCase();
+
+  let score = 30;
+  if (isWeekend) score += 18;
+  if (isEvening) score += 14;
+  if (isFree) score += 12;
+  if (["concert", "sports", "food"].includes(category)) score += 16;
+  if (category === "art") score += 8;
+  if (["energetic", "foodie", "social"].includes(mood)) score += 10;
+  if (["ticketmaster", "sistic", "eventbrite"].some((name) => source.includes(name))) score += 6;
+  if (text.includes("festival") || text.includes("market") || text.includes("night")) score += 10;
+  if (text.includes("workshop") || text.includes("class") || text.includes("small group")) score -= 10;
+  if (event.priceValue && event.priceValue >= 80) score -= 8;
+
+  const boundedScore = Math.min(Math.max(score, 10), 95);
+  const level = CROWD_LEVELS.find((item) => boundedScore <= item.maxScore) || CROWD_LEVELS[1];
+  return { ...level, score: boundedScore };
+}
+
+function eventCrowdBadge(event) {
+  const crowd = eventCrowd(event);
+  return `<span class="crowd-badge" data-crowd="${crowd.id}" title="${crowd.label}: predicted from timing, price, category, and event source">${crowdIcon(crowd.id)}<span>${crowd.shortLabel}</span></span>`;
+}
+
+function friendSavedNames(event) {
+  const key = String(event.id).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const count = key % 4;
+  return FRIENDS.slice(key % FRIENDS.length).concat(FRIENDS).slice(0, count);
+}
+
+function friendSavedBadge(event) {
+  const names = friendSavedNames(event);
+  if (!names.length) return "";
+  const label = names.length === 1 ? `${names[0]} saved` : `${names.length} friends saved`;
+  return `<span class="friend-saved-badge" title="${escapeHtml(names.join(", "))} saved this event">${friendsIcon()}<span>${label}</span></span>`;
+}
+
+function friendSavedDetail(event) {
+  const names = friendSavedNames(event);
+  if (!names.length) return "No friends have saved this yet. Share it to start planning together.";
+  return `${names.join(", ")} ${names.length === 1 ? "saved" : "saved"} this event.`;
+}
+
+function friendsIcon() {
+  return `<svg class="friends-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"></circle><circle cx="16.5" cy="9" r="2.5"></circle><path d="M3 20a5 5 0 0 1 10 0"></path><path d="M14 20a4 4 0 0 1 7 0"></path></svg>`;
+}
+
+function shareIcon() {
+  return `<svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.6 10.7 6.8-4.4"></path><path d="m8.6 13.3 6.8 4.4"></path></svg>`;
+}
+
+function crowdIcon(crowdId) {
+  const activeBars = { calm: 1, moderate: 2, busy: 3, packed: 4 }[crowdId] || 2;
+  return `<svg class="crowd-icon" aria-hidden="true" viewBox="0 0 24 24">
+    <rect class="${activeBars >= 1 ? "active" : ""}" x="4" y="14" width="3" height="6" rx="1"></rect>
+    <rect class="${activeBars >= 2 ? "active" : ""}" x="9" y="11" width="3" height="9" rx="1"></rect>
+    <rect class="${activeBars >= 3 ? "active" : ""}" x="14" y="8" width="3" height="12" rx="1"></rect>
+    <rect class="${activeBars >= 4 ? "active" : ""}" x="19" y="5" width="3" height="15" rx="1"></rect>
+  </svg>`;
+}
+
+function moodIcon(moodId) {
+  const icons = {
+    chill: `<svg class="mood-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 14c3.2-3.1 6.5-3.1 10 0 1.6 1.4 3 1.5 4.5.2"></path><path d="M7 18c2-1.5 4-1.5 6 0"></path><circle cx="17" cy="7" r="2.5"></circle></svg>`,
+    energetic: `<svg class="mood-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m13 2-8 12h6l-1 8 9-13h-6l0-7Z"></path></svg>`,
+    creative: `<svg class="mood-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 16.5V20h3.5L18.2 9.3l-3.5-3.5L4 16.5Z"></path><path d="m13.5 7 3.5 3.5"></path><path d="M15.5 4.5 17 3l4 4-1.5 1.5"></path></svg>`,
+    foodie: `<svg class="mood-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v8"></path><path d="M4.5 3v5.5a2.5 2.5 0 0 0 5 0V3"></path><path d="M7 11v10"></path><path d="M17 3v18"></path><path d="M14 3h3a3 3 0 0 1 0 6h-3"></path></svg>`,
+    outdoorsy: `<svg class="mood-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 21c7-1 12-6 14-16-10 1-15 6-14 16Z"></path><path d="M8 18c2-4 5-7 9-10"></path></svg>`,
+    social: `<svg class="mood-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"></circle><circle cx="17" cy="9" r="2.5"></circle><path d="M3 20a5 5 0 0 1 10 0"></path><path d="M14 20a4 4 0 0 1 7 0"></path></svg>`,
+  };
+  return icons[moodId] || icons.chill;
+}
+
+function allMoodsIcon() {
+  return `<svg class="mood-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m5.6 5.6 2.1 2.1"></path><path d="m16.3 16.3 2.1 2.1"></path><path d="m18.4 5.6-2.1 2.1"></path><path d="m7.7 16.3-2.1 2.1"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 }
 
 function calendarMetaIcon() {
@@ -631,6 +811,9 @@ function getAiEventCandidates(options = {}) {
     id: String(event.id),
     title: event.title,
     category: event.category,
+    mood: eventMood(event).label,
+    crowd: eventCrowd(event).label,
+    friendsSaved: friendSavedNames(event).length,
     date: eventDateTime(event),
     place: event.place,
     price: event.price,
@@ -1061,10 +1244,10 @@ function formatEventTime(date, market = activeMarket) {
 }
 
 function formatPrice(min, max, currency, market = activeMarket) {
-  if (min === null && max === null) return "See tickets";
+  if (min === null && max === null) return "Price TBA";
   if (min === 0 && max === 0) return "Free";
   const symbol = currency === market.currency ? market.currencySymbol : `${currency} `;
-  return min === max ? `${symbol}${min}` : `${symbol}${min}-${max}`;
+  return min === max ? `${symbol}${min}` : `From ${symbol}${min}`;
 }
 
 function numberOrNull(value) {
@@ -1134,9 +1317,10 @@ function render() {
     resultsMeta.textContent = `${filtered.length} ${noun} in this area`;
   } else {
     const queryText = searchInput.value.trim() ? ` for "${searchInput.value.trim()}"` : "";
+    const moodText = activeMood === "All" ? "" : ` · ${MOODS[activeMood]?.label || "Mood"} mood`;
     resultsMeta.textContent = usingFallbackEvents
-      ? `${filtered.length} demo experiences${queryText}`
-      : `${filtered.length} nearby experiences${queryText}`;
+      ? `${filtered.length} demo experiences${queryText}${moodText}`
+      : `${filtered.length} nearby experiences${queryText}${moodText}`;
   }
 
   renderSaved();
@@ -1154,11 +1338,13 @@ function switchMarket(marketId) {
   clearAiRecommendations();
   clearMapAreaFilterState();
   activeCategory = "All";
+  activeMood = "All";
   searchInput.value = "";
   if (dateSelect) dateSelect.value = "Anytime";
+  if (categorySelect) categorySelect.value = "All";
+  if (moodSelect) moodSelect.value = "All";
   sortSelect.value = "recommended";
   resetPagination();
-  document.querySelectorAll(".filter").forEach((button, index) => button.classList.toggle("active", index === 0));
 
   const marketEvents = events.filter((event) => event.marketId === activeMarket.id);
   activeMapId = marketEvents[0]?.id || null;
@@ -1355,7 +1541,7 @@ function renderMap(filtered) {
 }
 
 function mapLayerEvents(filtered) {
-  if (aiRecommendationActive || searchInput.value.trim()) return filtered;
+  if (aiRecommendationActive || searchInput.value.trim() || activeMood !== "All") return filtered;
   return activeCategory === "All" ? filtered : events.filter((event) => (event.marketId || DEFAULT_MARKET_ID) === activeMarket.id);
 }
 
@@ -1539,7 +1725,10 @@ function highlightActiveMarker() {
 
   googleMarkers.forEach((marker, id) => {
     const event = events.find((item) => String(item.id) === String(id));
-    const focused = !event || activeCategory === "All" || event.category === activeCategory || aiRecommendationActive || searchInput.value.trim();
+    const focused = !event ||
+      aiRecommendationActive ||
+      searchInput.value.trim() ||
+      ((activeCategory === "All" || event.category === activeCategory) && (activeMood === "All" || eventMood(event).id === activeMood));
     marker.setIcon(markerIcon(String(id) === String(activeMapId), focused));
     marker.setZIndex(String(id) === String(activeMapId) ? 20 : 1);
   });
@@ -1660,6 +1849,29 @@ function toggleSave(id) {
   render();
 }
 
+async function shareEvent(id) {
+  const event = events.find((item) => String(item.id) === String(id));
+  if (!event) return;
+
+  const url = event.ticketUrl || event.officialUrl || window.location.href;
+  const text = [
+    `Want to go to ${event.title}?`,
+    `${eventDateTime(event)} at ${event.place}`,
+    url,
+  ].filter(Boolean).join("\n");
+
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: event.title, text, url });
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast("Event link copied for your friends");
+    }
+  } catch {
+    toast("Share canceled");
+  }
+}
+
 function openDetails(id) {
   const event = events.find((item) => String(item.id) === String(id));
   if (!event) return;
@@ -1670,14 +1882,19 @@ function openDetails(id) {
   dialogContent.innerHTML = `
     <div class="dialog-media" style="${eventImageStyle(event)}"></div>
     <div class="dialog-body">
-      <span class="card-tag">${event.category}</span>
+      <div class="dialog-topline">
+        <span class="card-tag">${event.category}</span>
+        <span class="signal-row">${eventMoodChip(event)}${eventCrowdBadge(event)}${friendSavedBadge(event)}</span>
+      </div>
       <h2 id="dialogTitle">${event.title}</h2>
       <p>${event.description}</p>
+      <p class="friend-note">${friendsIcon()} ${escapeHtml(friendSavedDetail(event))}</p>
       <div class="meta">${calendarMetaIcon()}<span>${eventDateTime(event)}</span></div>
       <div class="meta">${locationMetaIcon()}<span>${event.place}</span></div>
       <div class="dialog-actions">
         <button class="dialog-save btn-primary" type="button" data-save="${event.id}">${isSaved ? "Remove from plans" : "Save to plans"}</button>
         <button class="dialog-calendar btn-secondary" type="button" data-calendar="${event.id}">Add calendar</button>
+        <button class="btn-secondary" type="button" data-share-event="${event.id}">Share event</button>
         <a class="btn-secondary" href="${eventLink}" target="_blank" rel="noreferrer">${eventLinkText}</a>
         <button class="dialog-close btn-tertiary" type="button" data-close-dialog>Close</button>
       </div>
@@ -1743,17 +1960,6 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  const filterButton = event.target.closest(".filter");
-  if (filterButton) {
-    clearAiRecommendations();
-    clearMapAreaFilterState();
-    activeCategory = filterButton.dataset.category;
-    resetPagination();
-    document.querySelectorAll(".filter").forEach((button) => button.classList.toggle("active", button === filterButton));
-    render();
-    return;
-  }
-
   const promptButton = event.target.closest("[data-ai-prompt]");
   if (promptButton) {
     runSearchPrompt(promptButton.dataset.aiPrompt);
@@ -1801,6 +2007,12 @@ document.addEventListener("click", (event) => {
   const mapButton = event.target.closest("[data-map]");
   if (mapButton) {
     setActiveMap(mapButton.dataset.map);
+    return;
+  }
+
+  const shareEventButton = event.target.closest("[data-share-event]");
+  if (shareEventButton) {
+    shareEvent(shareEventButton.dataset.shareEvent);
     return;
   }
 
@@ -1874,6 +2086,20 @@ dateSelect?.addEventListener("change", () => {
   resetPagination();
   render();
 });
+categorySelect?.addEventListener("change", () => {
+  clearAiRecommendations();
+  clearMapAreaFilterState();
+  activeCategory = categorySelect.value;
+  resetPagination();
+  render();
+});
+moodSelect?.addEventListener("change", () => {
+  clearAiRecommendations();
+  clearMapAreaFilterState();
+  activeMood = moodSelect.value;
+  resetPagination();
+  render();
+});
 sortSelect.addEventListener("change", () => {
   clearAiRecommendations();
   clearMapAreaFilterState();
@@ -1938,11 +2164,13 @@ document.querySelector("#seeAll").addEventListener("click", () => {
   clearAiRecommendations();
   clearMapAreaFilterState();
   activeCategory = "All";
+  activeMood = "All";
   searchInput.value = "";
   if (dateSelect) dateSelect.value = "Anytime";
+  if (categorySelect) categorySelect.value = "All";
+  if (moodSelect) moodSelect.value = "All";
   sortSelect.value = "recommended";
   resetPagination();
-  document.querySelectorAll(".filter").forEach((button, index) => button.classList.toggle("active", index === 0));
   render();
 });
 

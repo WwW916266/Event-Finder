@@ -87,14 +87,32 @@
         </div>
 
         <div class="toolbar">
-          <div class="filters" id="filters" aria-label="Event categories">
-            <button class="filter active" type="button" data-category="All">All picks</button>
-            <button class="filter" type="button" data-category="Concert">Concerts</button>
-            <button class="filter" type="button" data-category="Food">Food & drink</button>
-            <button class="filter" type="button" data-category="Art">Arts</button>
-            <button class="filter" type="button" data-category="Sports">Sports</button>
-            <button class="filter" type="button" data-category="Outdoor">Outdoors</button>
-            <button class="filter" type="button" data-category="Learning">Workshops</button>
+          <div class="filter-selects" aria-label="Event filters">
+            <label class="filter-field" for="categorySelect">
+              <span>Pick</span>
+              <select id="categorySelect">
+                <option value="All">All picks</option>
+                <option value="Concert">Concerts</option>
+                <option value="Food">Food & drink</option>
+                <option value="Art">Arts</option>
+                <option value="Sports">Sports</option>
+                <option value="Outdoor">Outdoors</option>
+                <option value="Learning">Workshops</option>
+              </select>
+            </label>
+
+            <label class="filter-field" for="moodSelect">
+              <span>Vibe</span>
+              <select id="moodSelect">
+                <option value="All">All vibes</option>
+                <option value="chill">Chill</option>
+                <option value="energetic">Energetic</option>
+                <option value="creative">Creative</option>
+                <option value="foodie">Foodie</option>
+                <option value="outdoorsy">Outdoorsy</option>
+                <option value="social">Social</option>
+              </select>
+            </label>
           </div>
 
           <div class="toolbar-actions">
